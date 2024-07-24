@@ -48,6 +48,7 @@ trait DefaultPredicateVerificationUnitProvider extends VerifierComponent { v: Ve
 
   object predicateSupporter extends PredicateVerificationUnit with StatefulComponent {
     import viper.silicon.rules.producer._
+    import viper.silicon.rules.wellFormedness._
 
     private var predicateData: Map[ast.Predicate, PredicateData] = Map.empty
 
@@ -91,7 +92,9 @@ trait DefaultPredicateVerificationUnitProvider extends VerifierComponent { v: Ve
       SymbExLogger.insertMember(predicate, null, v.decider.pcs)
 
       val ins = predicate.formalArgs.map(_.localVar)
-      val s = sInit.copy(g = Store(ins.map(x => (x, decider.fresh(x)))),
+      val s = sInit.copy(isImprecise = false, 
+                         optimisticHeap = Heap(),
+                         g = Store(ins.map(x => (x, decider.fresh(x)))),
                          h = Heap(),
                          oldHeaps = OldHeaps())
       val err = PredicateNotWellformed(predicate)
@@ -103,7 +106,7 @@ trait DefaultPredicateVerificationUnitProvider extends VerifierComponent { v: Ve
           /*    locallyXXX {
                 magicWandSupporter.checkWandsAreSelfFraming(σ.γ, σ.h, predicate, c)}
           &&*/  executionFlowController.locally(s, v)((s1, _) => {
-                  produce(s1, freshSnap, body, err, v)((_, _) =>
+                  wellformed(s1, freshSnap, Seq(body), err, v)((_, _) =>
                     Success())})
       }
 

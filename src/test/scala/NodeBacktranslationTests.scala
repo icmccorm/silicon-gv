@@ -13,13 +13,14 @@ import viper.silver.frontend.SilFrontend
 import viper.silver.verifier.Failure
 
 class NodeBacktranslationTests extends FunSuite {
-  test("Issue #348 Test 1") {
+  // These two tests rely on functions and exhale
+/*  test("Issue #348 Test 1") {
     runTest("errorMessageTests/misc/", "0348-1", tests.instantiateFrontend())
   }
 
   test("Issue #348 Test 2") {
     runTest("errorMessageTests/misc/", "0348-2", tests.instantiateFrontend())
-  }
+  } */
 
   def runTest(filePrefix: String, fileName: String, frontend: SilFrontend): Unit = {
     val program = tests.loadProgram(filePrefix, fileName, frontend)

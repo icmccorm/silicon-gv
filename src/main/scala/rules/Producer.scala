@@ -16,8 +16,10 @@ import viper.silicon.state.terms.predef.`?r`
 import viper.silicon.state.terms._
 import viper.silicon.state._
 import viper.silicon.supporters.functions.NoopFunctionRecorder
+import viper.silicon.utils.toSf
 import viper.silicon.verifier.Verifier
 import viper.silicon.{GlobalBranchRecord, ProduceRecord, SymbExLogger}
+import viper.silver.verifier.reasons._
 
 trait ProductionRules extends SymbolicExecutionRules {
 
@@ -39,6 +41,8 @@ trait ProductionRules extends SymbolicExecutionRules {
               v: Verifier)
              (Q: (State, Verifier) => VerificationResult)
              : VerificationResult
+
+
 
   /** Subsequently produces assertions `as` into state `s`.
     *
@@ -135,6 +139,9 @@ object producer extends ProductionRules with Immutable {
                          (Q: (State, Verifier) => VerificationResult)
                          : VerificationResult = {
 
+    // TODO: unset the method call ast node field here!
+    // TODO: check the other places where we do something like this...
+    
     if (as.isEmpty)
       Q(s, v)
     else {
@@ -168,7 +175,7 @@ object producer extends ProductionRules with Immutable {
 
     val tlcs = a.topLevelConjuncts
     val pves = Seq.fill(tlcs.length)(pve)
-
+    
     produceTlcs(s, sf, tlcs, pves, v)(Q)
   }
 
@@ -204,7 +211,14 @@ object producer extends ProductionRules with Immutable {
       continuation(if (state.exhaleExt) state.copy(reserveHeaps = state.h +: state.reserveHeaps.drop(1)) else state, verifier)
 
     val produced = a match {
-      case imp @ ast.Implies(e0, a0) if !a.isPure =>
+
+      // TODO: figure out how imprecise deals with snapshots - J
+      case impr @ ast.ImpreciseExp(e) =>
+      //  val (sf0, sf1) = v.snapshotSupporter.createSnapshotPair(s, sf, a, a, v)
+        val second = toSf(Second(sf(sorts.Snap, v)))
+        produce(s.copy(isImprecise = true), second, e, pve, v)(Q)
+
+/*      case imp @ ast.Implies(e0, a0) if !a.isPure =>
         val impLog = new GlobalBranchRecord(imp, s, v.decider.pcs, "produce")
         val sepIdentifier = SymbExLogger.currentLog().insert(impLog)
         SymbExLogger.currentLog().initializeBranching()
@@ -220,24 +234,59 @@ object producer extends ProductionRules with Immutable {
                 res1}),
               (s2, v2) => {
                 v2.decider.assume(sf(sorts.Snap, v2) === Unit)
-                  /* TODO: Avoid creating a fresh var (by invoking) `sf` that is not used
+                  * TODO: Avoid creating a fresh var (by invoking) `sf` that is not used
                    * otherwise. In order words, only make this assumption if `sf` has
-                   * already been used, e.g. in a snapshot equality such as `s0 == (s1, s2)`.
-                   */
+                   * already been used, e.g. in a snapshot equality such as `s == (s1, s2)`.
+                   *
                 val res2 = Q(s2, v2)
                 impLog.finish_elsSubs()
                 res2})
           SymbExLogger.currentLog().collapse(null, sepIdentifier)
           branch_res})
+*/
+      // this would be invoked on a postcondition? after the precondition is
+      // consumed and evaluated maybe
+      
+      // use and unset the method call ast node attached to the state for
+      // postconditions here
+      //
+      // IMPORTANT: that field must be unset before 
+      case ite @ ast.CondExp(e0, a1, a2) =>
 
-      case ite @ ast.CondExp(e0, a1, a2) if !a.isPure =>
         val gbLog = new GlobalBranchRecord(ite, s, v.decider.pcs, "produce")
         val sepIdentifier = SymbExLogger.currentLog().insert(gbLog)
         SymbExLogger.currentLog().initializeBranching()
-        eval(s, e0, pve, v)((s1, t0, v1) => {
+        val s_1 = s.copy(generateChecks = false, needConditionFramingProduce = true)
+        evalpc(s_1, e0, pve, v, false)((s1, t0, v1) => {
+          val s1_1 = s.copy(generateChecks = true, needConditionFramingProduce = false)
           gbLog.finish_cond()
-          val branch_res =
-            branch(s1, t0, v1)(
+          val branch_res = {
+
+            // val branchPositionAstNode = s.methodCallAstNode match {
+            //   case None => {
+            //     println("We could not find a method call ast node! Why? Try to look into it...")
+            //     ite
+            //   }
+            //   case Some(methodCallAstNode) => methodCallAstNode
+            // }
+            
+            val branchPosition: Option[CheckPosition] =
+              (s1_1.methodCallAstNode, s1_1.foldOrUnfoldAstNode, s1_1.loopPosition) match {
+                case (None, None, None) => None
+                case (Some(methodCallAstNode), None, None) =>
+                  Some(CheckPosition.GenericNode(methodCallAstNode))
+                case (None, Some(foldOrUnfoldAstNode), None) =>
+                  Some(CheckPosition.GenericNode(foldOrUnfoldAstNode))
+                case (None, None, Some(loopPosition)) =>
+                  Some(loopPosition)
+                case _ =>
+                  sys.error("We shouldn't need to consider this case until "
+                    + "we have unfoldings! We have an error here instead of a "
+                    + "temporary solution like enclosing both in ast.And because "
+                    + "we want to know if this occurs!")
+              }
+
+            branch(s1_1, t0, e0, branchPosition, v1)(
               (s2, v2) => produceR(s2, sf, a1, pve, v2)((s3, v3) => {
                 val res1 = Q(s3, v3)
                 gbLog.finish_thnSubs()
@@ -247,50 +296,68 @@ object producer extends ProductionRules with Immutable {
                 val res2 = Q(s3, v3)
                 gbLog.finish_elsSubs()
                 res2}))
+          }
           SymbExLogger.currentLog().collapse(null, sepIdentifier)
           branch_res})
 
-      case let: ast.Let if !let.isPure =>
-        letSupporter.handle[ast.Exp](s, let, pve, v)((s1, g1, body, v1) =>
-          produceR(s1.copy(g = s1.g + g1), sf, body, pve, v1)(Q))
-
+/*      case let: ast.Let if !let.isPure =>
+ *      letSupporter.handle[ast.Exp](s, let, pve, v)((s1, g1, body, v1) =>
+ *        produceR(s1.copy(g = s1.g + g1), sf, body, pve, v1)(Q))
+ */
       case ast.FieldAccessPredicate(ast.FieldAccess(eRcvr, field), perm) =>
-        eval(s, eRcvr, pve, v)((s1, tRcvr, v1) =>
-          eval(s1, perm, pve, v1)((s2, tPerm, v2) => {
-            val snap = sf(v2.symbolConverter.toSort(field.typ), v2)
-            val gain = PermTimes(tPerm, s2.permissionScalingFactor)
-            if (s2.qpFields.contains(field)) {
-              val trigger = (sm: Term) => FieldTrigger(field.name, sm, tRcvr)
-              quantifiedChunkSupporter.produceSingleLocation(s2, field, Seq(`?r`), Seq(tRcvr), snap, gain, trigger, v2)(Q)
-            } else {
+        val s0 = s.copy(generateChecks = false)
+        evalpc(s0, eRcvr, pve, v, false)((s1, tRcvr, v1) =>
+          evalpc(s1, perm, pve, v1, false)((s2, tPerm, v2) => {
+            val s2_0 = s2.copy(generateChecks = true)
+            if(chunkSupporter.inHeap(s2_0.h, s2_0.h.values, field, Seq(tRcvr), v2)) {
+              // NEED: Actually because it's in the heap, but don't know how to do that yet
+              createFailure(pve dueTo NegativePermission(perm), v2, s2_0) }
+            else {
+              val snap = sf(v2.symbolConverter.toSort(field.typ), v2)
+              val gain = PermTimes(tPerm, s2_0.permissionScalingFactor)
+/*            if (s2.qpFields.contains(field)) {
+ *            val trigger = (sm: Term) => FieldTrigger(field.name, sm, tRcvr)
+ *            quantifiedChunkSupporter.produceSingleLocation(s2, field, Seq(`?r`), Seq(tRcvr), snap, gain, trigger, v2)(Q)
+ *          } else {
+ */
               val ch = BasicChunk(FieldID, BasicChunkIdentifier(field.name), Seq(tRcvr), snap, gain)
-              chunkSupporter.produce(s2, s2.h, ch, v2)((s3, h3, v3) =>
-                Q(s3.copy(h = h3), v3))
-            }}))
+              chunkSupporter.produce(s2_0, s2_0.h, ch, v2)((s3, h3, v3) => {
+                v3.decider.assume(tRcvr !== Null())
+                Q(s3.copy(h = h3), v3)})
+            }
+        }))
 
       case ast.PredicateAccessPredicate(ast.PredicateAccess(eArgs, predicateName), perm) =>
         val predicate = Verifier.program.findPredicate(predicateName)
-        evals(s, eArgs, _ => pve, v)((s1, tArgs, v1) =>
-          eval(s1, perm, pve, v1)((s2, tPerm, v2) => {
-            val snap = sf(
-              predicate.body.map(v2.snapshotSupporter.optimalSnapshotSort(_, Verifier.program)._1)
+        val s0 = s.copy(generateChecks = false)
+        evalspc(s0, eArgs, _ => pve, v, false)((s1, tArgs, v1) =>
+          evalpc(s1, perm, pve, v1, false)((s2, tPerm, v2) => {
+            val s2_0 = s2.copy(generateChecks = true)
+            if (chunkSupporter.inHeap(s2_0.h, s2_0.h.values, predicate, tArgs, v2)) {
+              // Actually because it's in the heap, but don't know how to do that yet
+              createFailure(pve dueTo NegativePermission(perm), v2, s2_0) }
+            else {
+              val snap = sf(
+                predicate.body.map(v2.snapshotSupporter.optimalSnapshotSort(_, Verifier.program)._1)
                             .getOrElse(sorts.Snap), v2)
-            val gain = PermTimes(tPerm, s2.permissionScalingFactor)
-            if (s2.qpPredicates.contains(predicate)) {
+              val gain = PermTimes(tPerm, s2_0.permissionScalingFactor)
+/*            if (s2.qpPredicates.contains(predicate)) {
               val formalArgs = s2.predicateFormalVarMap(predicate)
               val trigger = (sm: Term) => PredicateTrigger(predicate.name, sm, tArgs)
               quantifiedChunkSupporter.produceSingleLocation(
                 s2, predicate, formalArgs, tArgs, snap, gain, trigger, v2)(Q)
             } else {
+*/
               val snap1 = snap.convert(sorts.Snap)
               val ch = BasicChunk(PredicateID, BasicChunkIdentifier(predicate.name), tArgs, snap1, gain)
-              chunkSupporter.produce(s2, s2.h, ch, v2)((s3, h3, v3) => {
-                if (Verifier.config.enablePredicateTriggersOnInhale() && s3.functionRecorder == NoopFunctionRecorder) {
+              chunkSupporter.produce(s2_0, s2_0.h, ch, v2)((s3, h3, v3) => {
+                /* if (Verifier.config.enablePredicateTriggersOnInhale() && s3.functionRecorder == NoopFunctionRecorder) {
                   v3.decider.assume(App(Verifier.predicateData(predicate).triggerFunction, snap1 +: tArgs))
-                }
+                } */
                 Q(s3.copy(h = h3), v3)})
             }}))
 
+/*
       case wand: ast.MagicWand if s.qpMagicWands.contains(MagicWandIdentifier(wand, Verifier.program)) =>
         val bodyVars = wand.subexpressionsToEvaluate(Verifier.program)
         val formalVars = bodyVars.indices.toList.map(i => Var(Identifier(s"x$i"), v.symbolConverter.toSort(bodyVars(i).typ)))
@@ -326,9 +393,9 @@ object producer extends ProductionRules with Immutable {
           chunkSupporter.produce(s1, s1.h, chWand, v1)((s2, h2, v2) =>
             Q(s2.copy(h = h2), v2)))
 
-      /* TODO: Initial handling of QPs is identical/very similar in consumer
+       * TODO: Initial handling of QPs is identical/very similar in consumer
        *       and producer. Try to unify the code.
-       */
+       *
       case QuantifiedPermissionAssertion(forall, cond, acc: ast.FieldAccessPredicate) =>
         val qid = acc.loc.field.name
         val optTrigger =
@@ -412,16 +479,18 @@ object producer extends ProductionRules with Immutable {
               v1
             )(Q)
         }
-
-      case _: ast.InhaleExhaleExp =>
-        Failure(viper.silicon.utils.consistency.createUnexpectedInhaleExhaleExpressionError(a))
-
+*/
+/*      case _: ast.InhaleExhaleExp =>
+ *      Failure(viper.silicon.utils.consistency.createUnexpectedInhaleExhaleExpressionError(a))
+ */
       /* Any regular expressions, i.e. boolean and arithmetic. */
       case _ =>
         v.decider.assume(sf(sorts.Snap, v) === Unit) /* TODO: See comment for case ast.Implies above */
-        eval(s, a, pve, v)((s1, t, v1) => {
+        val s0 = s.copy(generateChecks = false)
+        evalpc(s0, a, pve, v, false)((s1, t, v1) => {
+          val s2 = s1.copy(generateChecks = true)
           v1.decider.assume(t)
-          Q(s1, v1)})
+          Q(s2, v1)})
     }
 
     produced

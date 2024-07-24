@@ -137,7 +137,7 @@ class DefaultSnapshotSupporter(symbolConverter: SymbolConverter) extends Snapsho
     assert(snap != Unit, "Unit snapshot cannot be decomposed")
 
     val (snap0, snap1, snapshotEq) =
-      /* // [2019-12-22 Malte] Old code kept for documentation purposes
+/* // [2019-12-22 Malte] Old code kept for documentation purposes
       if (!s.conservingSnapshotGeneration) {
         val snap0 = mkSnap(a0, Verifier.program, v)
         val snap1 = mkSnap(a1, Verifier.program, v)

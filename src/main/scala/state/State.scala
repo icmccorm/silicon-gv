@@ -17,8 +17,14 @@ import viper.silicon.supporters.functions.{FunctionRecorder, NoopFunctionRecorde
 import viper.silicon.{Map, Stack}
 
 final case class State(g: Store = Store(),
+                       oldStore: Option[Store] = None,
                        h: Heap = Heap(),
                        oldHeaps: OldHeaps = Map.empty,
+
+                       isImprecise: Boolean = false,
+                       optimisticHeap: Heap = Heap(),
+                       gatherFrame: Boolean = false,
+                       frameArgHeap: Heap = Heap(),
 
                        parallelizeBranches: Boolean = false,
 
@@ -26,7 +32,7 @@ final case class State(g: Store = Store(),
                        visited: List[ast.Predicate] = Nil, /* TODO: Use a multiset instead of a list */
 
                        methodCfg: SilverCfg = null,
-                       invariantContexts: Stack[Heap] = Stack.empty,
+                       invariantContexts: Stack[(Boolean,Boolean,Heap,Heap)] = Stack.empty,
 
                        constrainableARPs: InsertionOrderedSet[Var] = InsertionOrderedSet.empty,
                        quantifiedVariables: Stack[Var] = Nil,
@@ -64,7 +70,15 @@ final case class State(g: Store = Store(),
                        /* TODO: Isn't this data stable, i.e. fully known after a preprocessing step? If so, move it to the appropriate supporter. */
                        predicateSnapMap: Map[ast.Predicate, terms.Sort] = Map.empty,
                        predicateFormalVarMap: Map[ast.Predicate, Seq[terms.Var]] = Map.empty,
-                       isMethodVerification: Boolean = false)
+                       isMethodVerification: Boolean = false,
+                       methodCallAstNode: Option[ast.MethodCall] = None,
+                       foldOrUnfoldAstNode: Option[ast.Node] = None,
+                       loopPosition: Option[CheckPosition.Loop] = None,
+                       forFraming: Boolean = false,
+                       generateChecks: Boolean = true,
+                       needConditionFramingUnfold: Boolean = false,
+                       needConditionFramingProduce: Boolean = false,
+                       madeOptimisticAssumptions: Boolean = false)
     extends Mergeable[State] {
 
   def incCycleCounter(m: ast.Predicate) =
@@ -129,7 +143,9 @@ object State {
 
     s1 match {
       /* Decompose state s1 */
-      case State(g1, h1, oldHeaps1,
+      case State(g1, oldStore1, h1, oldHeaps1,
+                 isImprecise, optimisticHeap1,
+                 gatherFrame1, frameArgHeap1,
                  parallelizeBranches1,
                  recordVisited1, visited1,
                  methodCfg1, invariantContexts1,
@@ -147,11 +163,18 @@ object State {
                  applyHeuristics1, heuristicsDepth1, triggerAction1,
                  ssCache1, hackIssue387DisablePermissionConsumption1,
                  qpFields1, qpPredicates1, qpMagicWands1, smCache1, pmCache1, smDomainNeeded1,
-                 predicateSnapMap1, predicateFormalVarMap1, hack) =>
+                 predicateSnapMap1, predicateFormalVarMap1, hack,
+                 methodCallAstNode1, foldOrUnfoldAstNode1, loopPosition1, forFraming, generateChecks,
+                 needConditionFramingUnfold, needConditionFramingProduce,
+                 madeOptimisticAssumptions) =>
 
         /* Decompose state s2: most values must match those of s1 */
         s2 match {
-          case State(`g1`, `h1`, `oldHeaps1`,
+          // we do not care whether oldStore matches here; oldStore should not
+          // stick around for that long?
+          case State(`g1`, `oldStore1`, `h1`, `oldHeaps1`,
+                     `isImprecise`, `optimisticHeap1`,
+                     `gatherFrame1`, `frameArgHeap1`,
                      `parallelizeBranches1`,
                      `recordVisited1`, `visited1`,
                      `methodCfg1`, `invariantContexts1`,
@@ -169,7 +192,10 @@ object State {
                      `applyHeuristics1`, `heuristicsDepth1`, `triggerAction1`,
                      ssCache2, `hackIssue387DisablePermissionConsumption1`,
                      `qpFields1`, `qpPredicates1`, `qpMagicWands1`, smCache2, pmCache2, `smDomainNeeded1`,
-                     `predicateSnapMap1`, `predicateFormalVarMap1`, `hack`) =>
+                     `predicateSnapMap1`, `predicateFormalVarMap1`, `hack`,
+                     `methodCallAstNode1`, `foldOrUnfoldAstNode1`, `loopPosition1`, `forFraming`,
+                     `generateChecks`, `needConditionFramingUnfold`,
+                     `needConditionFramingProduce`, `madeOptimisticAssumptions`) =>
 
             val functionRecorder3 = functionRecorder1.merge(functionRecorder2)
             val triggerExp3 = triggerExp1 && triggerExp2

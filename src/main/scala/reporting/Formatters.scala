@@ -8,11 +8,10 @@ package viper.silicon.reporting
 
 import viper.silicon.decider.RecordedPathConditions
 import viper.silicon.state.State.OldHeaps
-import viper.silicon.state.{Heap, State, Store}
+import viper.silicon.state.{Heap, State, Store, runtimeChecks, profilingInfo, reconstructedPermissions}
 import viper.silicon.state.terms._
 import viper.silicon.verifier.Verifier
 import viper.silver.ast.AbstractLocalVar
-import viper.silicon.SiliconRunner
 
 /* TODO: Use a proper pretty-printer such as the one we use for Silver AST nodes and Silicon terms */
 
@@ -26,30 +25,45 @@ trait StateFormatter {
 
 class DefaultStateFormatter extends StateFormatter {
   def format(s: State, pcs: RecordedPathConditions): String = {
+    val isImpStr = s.isImprecise.toString
     val gStr = format(s.g)
     val hStr = format(s.h)
+    val optHeapStr = format(s.optimisticHeap)
     val oldHeapsStr = format(s.oldHeaps)
+    val runtimeCheckMap = runtimeChecks.getChecks
+    val eliminatedConjunctsNum = profilingInfo.getEliminatedConjuncts
+    val totalConjunctsNum = profilingInfo.getTotalConjuncts
+    val permissions = "Reconstructed permissions deprecated."
+    val pcsStr = s"${format(pcs)}"
 
-    val pcsStr =
-      if (SiliconRunner.logger.isTraceEnabled())
-        /* TODO: It would be better if the choice between whether or not to include path
-         *       conditions in the output were made when instantiating the state formatter
-         */
-        s"${format(pcs)}\n"
-      else
-        ""
-
-    s"""Store: $gStr,
+    s"""Imprecise: $isImpStr,
+       |Store: $gStr,
        |Heap: $hStr,
+       |OptHeap: $optHeapStr,
        |OHs: $oldHeapsStr,
-       |PCs: $pcsStr)""".stripMargin
+       |PCs: $pcsStr,
+       |Runtime Checks: $runtimeCheckMap
+       |Total Conjuncts: $totalConjunctsNum
+       |Eliminated Conjuncts: $eliminatedConjunctsNum
+       |Reconstructed Permissions: $permissions""".stripMargin
   }
 
-  def format(g: Store): String = g.values.mkString("(", ", ", ")")
-  def format(h: Heap): String = h.values.mkString("(", ", ", ")")
+  def format(s: State, pcs: Set[Term]): String = {
+    val isImpStr = s.isImprecise.toString
+    val gStr = format(s.g)
+    val hStr = format(s.h)
+    val optHeapStr = format(s.optimisticHeap)
+
+    val pcsStr = format(pcs)
+
+    s""" Imprecise: $isImpStr, Store: $gStr, Heap: $hStr, OptHeap: $optHeapStr, PCs: $pcsStr)""".stripMargin
+  }
+
+  def format(g: Store): String = g.values.mkString("[{", "}, {", "}]")
+  def format(h: Heap): String = h.values.mkString("[", ", ", "]")
 
   def format(oldHeaps: OldHeaps): String = {
-    oldHeaps.map{case (id, h) => s"$id: ${format(h)}"}.mkString("(", ",\n", ")")
+    oldHeaps.map{case (id, h) => s"$id: ${format(h)}"}.mkString("[", ", ", "]")
   }
 
   /** Attention: The current implementation hides non-null and combine terms! **/
@@ -60,19 +74,37 @@ class DefaultStateFormatter extends StateFormatter {
            => true
       case Not(BuiltinEquals(_, Null())) => true
       case _ => false
-    }.mkString("(", ", ", ")")
+    }.mkString("[", ", ", "]")
+  }
+
+  def format(pcs: Set[Term]): String = {
+    /* Attention: Hides non-null and combine terms. */
+    val filteredPcs = pcs.filterNot {
+      case c: BuiltinEquals if c.p0.isInstanceOf[Combine]
+        || c.p1.isInstanceOf[Combine] => true
+      case Not(BuiltinEquals(_, Null())) => true
+      case _ => false
+    }
+    if (filteredPcs.isEmpty) "[]" else filteredPcs.mkString("[\"", "\", \"", "\"]")
   }
 
   //Methods for SymbexLogger
   def toJson(s: State, π: Set[Term]): String = {
+    val isImpStr = s.isImprecise.toString
     val γStr = toJson(s.g)
     val hStr = toJson(s.h)
+    val optHeapStr = toJson(s.optimisticHeap)
     val gStr = s.oldHeaps.get(Verifier.PRE_STATE_LABEL) match {
       case Some(o) => toJson(o)
       case _ => "[]"
     }
     val πStr = toJson(π)
-    s"""{"store":$γStr,"heap":$hStr,"oldHeap":$gStr,"pcs":$πStr}""".stripMargin
+    s"""{"imprecise":$isImpStr,
+       |"store":$γStr,
+       |"heap":$hStr,
+       | "optHeap":$optHeapStr,
+       | "oldHeap":$gStr,
+       | "pcs":$πStr}""".stripMargin
   }
 
   private def toJson(γ: Store): String = {

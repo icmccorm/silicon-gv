@@ -6,16 +6,24 @@
 
 package viper.silicon.rules
 
+import viper.silver.ast
+import viper.silver.ast.Exp
+import viper.silver.ast.Node
+
 import java.util.concurrent._
 import viper.silicon.common.concurrency._
-import viper.silicon.interfaces.{Unreachable, VerificationResult}
-import viper.silicon.state.State
+import viper.silicon.interfaces.{Unreachable, VerificationResult, Success, Failure}
+import viper.silicon.state.{State, CheckPosition, runtimeChecks, BranchCond}
 import viper.silicon.state.terms.{Not, Term}
+import viper.silicon.supporters.Translator
+import viper.silicon.utils
 import viper.silicon.verifier.Verifier
 
 trait BranchingRules extends SymbolicExecutionRules {
   def branch(s: State,
              condition: Term,
+             position: ast.Exp,
+             origin: Option[CheckPosition],
              v: Verifier,
              fromShortCircuitingAnd: Boolean = false)
             (fTrue: (State, Verifier) => VerificationResult,
@@ -26,6 +34,8 @@ trait BranchingRules extends SymbolicExecutionRules {
 object brancher extends BranchingRules with Immutable {
   def branch(s: State,
              condition: Term,
+             position: ast.Exp,
+             origin: Option[CheckPosition],
              v: Verifier,
              fromShortCircuitingAnd: Boolean = false)
             (fThen: (State, Verifier) => VerificationResult,
@@ -34,6 +44,10 @@ object brancher extends BranchingRules with Immutable {
 
     val negatedCondition = Not(condition)
     val parallelizeElseBranch = s.parallelizeBranches && !s.underJoin
+    val (g, h, oh) = s.oldStore match {
+      case Some(store) => (store, s.h + s.oldHeaps(Verifier.PRE_HEAP_LABEL), s.optimisticHeap + s.oldHeaps(Verifier.PRE_OPTHEAP_LABEL))
+      case None => (s.g, s.h, s.optimisticHeap)
+    }
 
     /* Skip path feasibility check if one of the following holds:
      *   (1) the branching is due to the short-circuiting evaluation of a conjunction
@@ -113,7 +127,12 @@ object brancher extends BranchingRules with Immutable {
             }
 
             v1.decider.prover.comment(s"[else-branch: $cnt | $negatedCondition]")
-            v1.decider.setCurrentBranchCondition(negatedCondition)
+            val negCond: Exp =
+              (new Translator(s1.copy(g = g, h = h, optimisticHeap = oh), v1.decider.pcs).translate(negatedCondition) match {
+                case None => sys.error("Error translating! Exiting safely.")
+                case Some(expr) => expr
+              })
+            v1.decider.setCurrentBranchCondition(negatedCondition, negCond, position, origin)
 
             fElse(stateConsolidator.consolidateIfRetrying(s1, v1), v1)
           })
@@ -142,16 +161,23 @@ object brancher extends BranchingRules with Immutable {
         CompletableFuture.completedFuture(Seq(Unreachable()))
       }
 
-    (if (executeThenBranch) {
+    val rsThen: VerificationResult = (if (executeThenBranch) {
       executionFlowController.locally(s, v)((s1, v1) => {
         v1.decider.prover.comment(s"[then-branch: $cnt | $condition]")
-        v1.decider.setCurrentBranchCondition(condition)
+        val cond: Exp =
+          (new Translator(s1.copy(g = g, h = h, optimisticHeap = oh), v1.decider.pcs).translate(condition) match {
+            case None => sys.error("Error translating! Exiting safely.")
+            case Some(expr) => expr
+          })
+        v1.decider.setCurrentBranchCondition(condition, cond, position, origin)
 
         fThen(stateConsolidator.consolidateIfRetrying(s1, v1), v1)
       })
     } else {
       Unreachable()
-    }) && {
+    })
+
+    val rsElse: VerificationResult = {
 
       /* [BRANCH-PARALLELISATION] */
       if (parallelizeElseBranch) {
@@ -185,6 +211,87 @@ object brancher extends BranchingRules with Immutable {
         assert(rs.length == 1, s"Expected a single verification result but found ${rs.length}")
         rs.head
       }
+    }
+
+    if (s.isImprecise && !fromShortCircuitingAnd) {
+      rsThen match {
+        case Success() => {
+          rsElse match {
+            case Success() | Unreachable() => Success()
+            case Failure(m1) => {
+              /* run-time check for rsThen branch */
+              val cond: Exp =
+                (new Translator(s.copy(g = g, h = h, optimisticHeap = oh), v.decider.pcs).translate(condition) match {
+                  case None => sys.error("Error translating! Exiting safely.")
+                  case Some(expr) => expr
+                })
+
+              // It's okay to not look in the state for the right position here,
+              // because we already look in the state to pass the correct position
+              // into branch
+              val runtimeCheckAstNode: CheckPosition =
+                origin match {
+                  case Some(checkPosNode) => checkPosNode
+                  case None => CheckPosition.GenericNode(position)
+                }
+
+              if (s.generateChecks) {
+                runtimeChecks.addChecks(runtimeCheckAstNode,
+                  cond,
+                  viper.silicon.utils.zip3(v.decider.pcs.branchConditionsSemanticAstNodes,
+                    v.decider.pcs.branchConditionsAstNodes,
+                    v.decider.pcs.branchConditionsOrigins).map(bc => BranchCond(bc._1, bc._2, bc._3)),
+                  position.asInstanceOf[Exp],
+                  false)
+              }
+
+              Success()
+              /* TODO: eventually should warn about failing branch to users - JW */
+            }
+          }
+        }
+        case Unreachable() => {
+          rsElse match {
+            case Success() | Failure(_) => rsElse
+            case Unreachable() => Unreachable()
+          }
+        }
+        case Failure(m1) => {
+          rsElse match {
+            case Success() => {
+              /* run-time check for rsElse branch */
+              val negCond: Exp =
+                (new Translator(s.copy(g = g, h = h, optimisticHeap = oh), v.decider.pcs).translate(negatedCondition) match {
+                  case None => sys.error("Error translating! Exiting safely.")
+                  case Some(expr) => expr
+                })
+
+              val runtimeCheckAstNode: CheckPosition =
+                origin match {
+                  case Some(checkPosNode) => checkPosNode
+                  case None => CheckPosition.GenericNode(position)
+                }
+
+              if (s.generateChecks) {
+                runtimeChecks.addChecks(runtimeCheckAstNode,
+                  negCond,
+                  viper.silicon.utils.zip3(v.decider.pcs.branchConditionsSemanticAstNodes,
+                    v.decider.pcs.branchConditionsAstNodes,
+                    v.decider.pcs.branchConditionsOrigins).map(bc => BranchCond(bc._1, bc._2, bc._3)),
+                  position.asInstanceOf[Exp],
+                  false)
+              }
+
+              Success()
+              /* TODO: eventually should warn about failing branch to users - JW */
+            }
+            case Unreachable() => rsThen
+            case Failure(m2) => rsThen && rsElse
+          }
+        }
+      }
+    } else {
+      (rsThen && rsElse)
     }
   }
 }

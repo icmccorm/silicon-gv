@@ -18,7 +18,8 @@ import viper.silicon.state.terms.perms.{IsNonPositive, IsPositive}
 import viper.silicon.supporters.functions.NoopFunctionRecorder
 import viper.silicon.verifier.Verifier
 import viper.silver.ast
-import viper.silver.verifier.VerificationError
+import viper.silver.verifier.{VerificationError, PartialVerificationError}
+import viper.silver.verifier.reasons._
 
 object moreCompleteExhaleSupporter extends SymbolicExecutionRules with Immutable {
   sealed trait TaggedSummarisingSnapshot {
@@ -130,13 +131,29 @@ object moreCompleteExhaleSupporter extends SymbolicExecutionRules with Immutable
 
   def lookupComplete(s: State,
                      h: Heap,
+                     oh: Heap,
+                     addToOh: Boolean,
                      resource: ast.Resource,
+                     runtimeCheckFieldTarget: ast.FieldAccess, 
                      args: Seq[Term],
+                     pve: PartialVerificationError,
                      ve: VerificationError,
-                     v: Verifier)
+                     v: Verifier,
+                     generateChecks: Boolean)
                     (Q: (State, Term, Verifier) => VerificationResult)
                     : VerificationResult = {
+    /* TODO: This needs updated to support imprecision whenever Gradual Viper supports
+    * fractional permissions. */
+    /* This function should only be called after correctly modifying it for imprecision.
+    * Gradual Viper does not currently support fractional permissions, so this case/call
+    * should not happen (i.e. the user should not enableMoreCompleteExhale).
+    * Thus, the code is left unmodified and commented out, and instead an error message is
+    * produced. */
+    createFailure(pve dueTo FeatureUnsupported(resource,
+      "enableMoreCompleteExhale is an unsupported Silicon-gv configuration at this time."),
+      v, s).withLoad(args)
 
+    /*
     val id = ChunkIdentifier(resource, Verifier.program)
     val relevantChunks = findChunksWithID[NonQuantifiedChunk](h.values, id).toSeq
 
@@ -155,6 +172,8 @@ object moreCompleteExhaleSupporter extends SymbolicExecutionRules with Immutable
             createFailure(ve, v, s1).withLoad(args)
         })
     }
+
+     */
   }
 
   def consumeComplete(s: State,

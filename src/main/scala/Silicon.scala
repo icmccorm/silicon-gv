@@ -28,7 +28,7 @@ import viper.silver.plugin.PluginAwareReporter
 
 object Silicon {
   val name = BuildInfo.projectName
-  
+
   val buildRevision = BuildInfo.gitRevision
   val buildBranch = BuildInfo.gitBranch
 

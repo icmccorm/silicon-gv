@@ -20,12 +20,16 @@ class SiliconTests extends SilSuite {
     Seq("consistency", "issue387")
 
   private val silTestDirectories =
-    Seq("all",
-        "quantifiedpermissions", "quantifiedpredicates" ,"quantifiedcombinations",
-        "wands", "termination",
-        "examples")
+    Seq(
+    "gradual",
+    "all"
+        )
 
-  val testDirectories: Seq[String] = siliconTestDirectories ++ silTestDirectories
+//  private val silTestDirectories = Seq("my-tests")
+
+  //val testDirectories: Seq[String] = siliconTestDirectories ++ silTestDirectories
+  val testDirectories: Seq[String] = silTestDirectories
+
 
   override def frontend(verifier: Verifier, files: Seq[Path]): SiliconFrontend = {
     require(files.length == 1, "tests should consist of exactly one file")
@@ -69,7 +73,6 @@ class SiliconTests extends SilSuite {
     val args = Silicon.optionsFromScalaTestConfigMap(prefixSpecificConfigMap(configMap).getOrElse("silicon", Map()))
     silicon.parseCommandLine(args :+ Silicon.dummyInputFilename)
   }
-
   val commandLineArguments: Seq[String] =
     Seq("--timeout", "300" /* seconds */)
 

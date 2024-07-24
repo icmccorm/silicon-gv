@@ -10,24 +10,24 @@
   <script type="text/javascript" src="js/jquery.ztree.excheck-3.5.min.js"></script>
   <script type="text/javascript" src="js/jquery.ztree.exedit-3.5.min.js"></script>
   <script type="text/javascript" src="executionTreeData.js"></script>
-  
+
   <style>
     .ztree li span[id^=executionTree_][id$=_span] {
       vertical-align: top;
     }
   </style>
-  
+
   <script type="text/javascript"> <!--
     /* Strings in backticks, e.g. `bla ${x} bla`, denote "template strings".
      * They require an ES6-compatible browser.
      */
-  
+
     var STATE = {
       STORE: "store",
       HEAP: "heap",
       PCS: "pcs"
     }
-  
+
     var setting = {
       view: {
         selectedMulti: false,
@@ -57,15 +57,15 @@
         // beforeExpand: beforeExpand
       }
     };
-    
+
     var xpos = 0;
     var displayValue = "inline";
     var stateBoxes = [];
-    
+
     $(document).ready(function(){
       $.fn.zTree.init($("#executionTree"), setting, executionTreeData);
       // console.log(`xpos = ${xpos}`);
-      
+
       displayValue = "none";
       positionStateBoxes();
     });
@@ -76,7 +76,7 @@
 
       var sObj = $(`#${treeNode.tId}_span`);
       if (treeNode.editNameFlag || $(`#addBtn_${treeNode.tId}`).length > 0) return;
-      
+
       var addStr = `
         <span class='button add'
               id='addBtn_${treeNode.tId}'
@@ -84,30 +84,30 @@
               onfocus='this.blur();'></span>`;
 
       sObj.after(addStr);
-      
+
       var btn = $(`#addBtn_${treeNode.tId}`);
-      
+
       if (btn) btn.bind("click", function() {
         for (element in STATE) {
           box = sObj.siblings(`#${treeNode.tId}_${STATE[element]}`);
           box.toggle();
         }
-        
+
         return false;
       });
     };
-    
+
     function removeHoverDom(treeId, treeNode) {
       $(`#addBtn_${treeNode.tId}`).unbind().remove();
     };
-    
+
     function onClick(e,treeId, treeNode) {
       var zTree = $.fn.zTree.getZTreeObj("executionTree");
       zTree.expandNode(treeNode, !treeNode.open, false, true, true);
-      
+
       return true;
     };
-    
+
     function addDiyDom(treeId, treeNode) {
       var aObj = $(`#${treeNode.tId}_a`);
       var sObj = $(aObj).children(`#${treeNode.tId}_span`);
@@ -115,23 +115,23 @@
       // console.log(sObj);
       // console.log(aObj.position());
       // console.log(aObj.width());
-      
+
       // var oldxpos = xpos;
       xpos = Math.max(xpos, sObj.position().left + sObj.width());
-      
+
       var stateContainer = `<span id="${treeNode.tId}_state" style="display: ${displayValue}"></span>`;
       aObj.append(stateContainer);
       scObj = aObj.children().last()
-      
+
       stateBoxes.push(scObj);
-      
+
       // var stateSwitch = `<span>σ</span>`;
       // aObj.append(stateSwitch);
-      
+
       for (element in STATE) {
         // console.log("element = " + element);
         box = createStateBox(treeNode.tId, STATE[element], treeNode.prestate[STATE[element]]);
-        
+
         // aObj.append(box);
         scObj.append(box);
         // var boxObj = aObj.children().last();
@@ -140,31 +140,31 @@
         // boxObj.css({position: "relative", left: 500});
         // stateBoxes.push(boxObj);
       }
-      
+
       // console.log("oldxpos = ", oldxpos);
-      // console.log("xpos = ", xpos);      
+      // console.log("xpos = ", xpos);
     }
-    
+
     function createStateBox(tId, kindStr, contents) {
       var stateBox = `
         <textarea style="/*display: ${displayValue}*/" id="${tId}_${kindStr}">${contents}</textarea>
       `;
-      
+
       return stateBox
     }
-    
+
     function beforeExpand(treeId, treeNode) {
       // console.log("beforeExpand: ", treeNode.tId);
       // var aObj = $(`#${treeNode.tId}_a`);
       // console.log("  aObj.width() ", aObj.width());
       // console.log(`  stateBoxes.length = ${stateBoxes.length}`);
     }
-    
-    
+
+
     function onExpand(e, treeId, treeNode) {
       // console.log("onExpand: ", treeNode);
       // console.log(`  stateBoxes.length = ${stateBoxes.length}`);
-      
+
       for (i in treeNode.children) {
         var tId = treeNode.children[i].tId;
         var aObj = $(`#${tId}_a`);
@@ -172,43 +172,43 @@
 
         xpos = Math.max(xpos, sObj.position().left + sObj.width());
       }
-      
+
       positionStateBoxes();
     };
-    
+
     function positionStateBoxes() {
       // for (i in stateBoxes) {
         // console.log(stateBoxes[i]);
       // }
-      
+
       // return;
-      
+
       // $(`textarea[id^="executionTree"][id$="heap"]`).each(function() {
       $(stateBoxes).each(function() {
         // console.log($(this));
         positionStateBox(this);
         $(this).show();
-        
+
         // var prev = $(this).prev();
         // var offsetLeft = xpos - (prev.position().left + prev.width());
         // $(this).css({position: "relative", left: offsetLeft});
       });
     }
-    
+
     function positionStateBox(box) {
       var prev = $(box).prev();
       var offsetLeft = xpos - (prev.position().left + prev.width());
-      
+
       $(box).css({position: "relative", left: offsetLeft});
     }
-    
+
     function onDblClick(e, treeId, treeNode) {
       var aObj = $(`#${treeNode.tId}_a`);
       var scObj = $(aObj).children(`#${treeNode.tId}_state`);
-      
+
       scObj.toggle();
     };
-    
+
     //-->
   </script>
 </head>

@@ -70,6 +70,7 @@ class Z3ProverStdIO(uniqueId: String,
 
     val z3File = z3Path.toFile
 
+
     if (!z3File.isFile)
       throw ExternalToolError("Z3", s"Cannot run Z3 at location '$z3File': not a file.")
 

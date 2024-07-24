@@ -328,7 +328,7 @@ trait UnaryOp[E] {
    */
   def p: E
 
-  override lazy val toString = s"$op($p)"
+  override lazy val toString = s"($op $p)"
 }
 
 trait BinaryOp[E] {
@@ -336,7 +336,7 @@ trait BinaryOp[E] {
   def p0: E
   def p1: E
 
-  override lazy val toString = s"$p0 $op $p1"
+  override lazy val toString = s"($op $p0 $p1)"
 }
 
 trait StructuralEqualityUnaryOp[E] extends UnaryOp[E] {
@@ -639,10 +639,10 @@ class Not(val p: Term) extends BooleanTerm
 
   override val op = "!"
 
-  override lazy val toString = p match {
-    case eq: BuiltinEquals => s"${eq.p0.toString} != ${eq.p1.toString}"
-    case _ => s"!($p)"
-  }
+  // override lazy val toString = p match {
+  //   case eq: BuiltinEquals => s"${eq.p0.toString} != ${eq.p1.toString}"
+  //   case _ => s"(! $p)"
+  // }
 }
 
 object Not extends (Term => Term) {
@@ -663,7 +663,7 @@ class Or(val ts: Seq[Term]) extends BooleanTerm
 
   val equalityDefiningMembers = ts
 
-  override lazy val toString = ts.mkString(" || ")
+  override lazy val toString = s"(or ${ts.mkString(" ")})"
 }
 
 /* TODO: Or should be (Term, Term) => BooleanTerm, but that would require
@@ -708,7 +708,7 @@ class And(val ts: Seq[Term]) extends BooleanTerm
 
   val equalityDefiningMembers = ts
 
-  override lazy val toString = ts.mkString(" && ")
+  override lazy val toString = s"(and ${ts.mkString(" ")})"
 }
 
 object And extends (Iterable[Term] => Term) {
@@ -1440,7 +1440,7 @@ object SetIntersection extends ((Term, Term) => SetTerm) {
   def unapply(si: SetIntersection) = Some((si.p0, si.p1))
 }
 
-class SetSubset(val p0: Term, val p1: Term) extends BooleanTerm 
+class SetSubset(val p0: Term, val p1: Term) extends BooleanTerm
     with StructuralEqualityBinaryOp[Term] {
   override val op = "⊂"
 }

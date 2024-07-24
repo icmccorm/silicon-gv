@@ -34,6 +34,7 @@ case class BasicChunk(resourceID: BaseID,
                       perm: Term)
     extends NonQuantifiedChunk {
 
+  
   require(perm.sort == sorts.Perm, s"Permissions $perm must be of sort Perm, but found ${perm.sort}")
   resourceID match {
     case FieldID => require(snap.sort != sorts.Snap, s"A field chunk's value ($snap) is not expected to be of sort Snap")

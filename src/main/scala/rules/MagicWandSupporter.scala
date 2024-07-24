@@ -377,7 +377,11 @@ object magicWandSupporter extends SymbolicExecutionRules with Immutable {
           parallelizeBranches = s.parallelizeBranches /* See comment above */
           /*branchConditions = c.branchConditions*/)
         executionFlowController.locally(s1, v)((s2, v1) => {
-          v1.decider.setCurrentBranchCondition(And(branchConditions))
+          // TODO GRADUAL: we don't support magic wands yet, so a "fake" position here is fine
+          v1.decider.setCurrentBranchCondition(And(branchConditions),
+            ast.NullLit()(),
+            ast.NullLit()(),
+            None)
           conservedPcs.foreach(pcs => v1.decider.assume(pcs.conditionalized))
           Q(s2, magicWandChunk, v1)})}})
   }

@@ -44,6 +44,8 @@ trait Verifier {
    TODO: Add a description to each var that explain when it is expected to be set */
 object Verifier {
   val PRE_STATE_LABEL = "old"
+  val PRE_HEAP_LABEL = "oldH"
+  val PRE_OPTHEAP_LABEL = "oldOH"
   val MAGIC_WAND_LHS_STATE_LABEL = LabelledOld.LhsOldLabel
 
   private var _config: Config = _

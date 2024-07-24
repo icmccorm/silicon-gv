@@ -1,4 +1,4 @@
-// This Source Code Form is subject to the terms of the Mozilla Public
+ // This Source Code Form is subject to the terms of the Mozilla Public
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 //
@@ -17,6 +17,7 @@ import viper.silicon.interfaces._
 import viper.silicon.interfaces.decider.{Prover, Unsat}
 import viper.silicon.state._
 import viper.silicon.state.terms._
+import viper.silicon.supporters.TermDifference
 import viper.silicon.verifier.{Verifier, VerifierComponent}
 import viper.silver.reporter.{ConfigurationConfirmation, InternalWarningMessage}
 
@@ -33,20 +34,26 @@ trait Decider {
 
   def checkSmoke(): Boolean
 
-  def setCurrentBranchCondition(t: Term)
+  def setCurrentBranchCondition(t: Term,
+    semanticAstNode: ast.Exp,
+    astNode: ast.Exp,
+    origin: Option[CheckPosition])
   def setPathConditionMark(): Mark
 
   def assume(t: Term)
   def assume(ts: InsertionOrderedSet[Term], enforceAssumption: Boolean = false)
   def assume(ts: Iterable[Term])
 
+  //Check to make sure Prover.scala doesn't need to be changed
   def check(t: Term, timeout: Int): Boolean
+  def checkgv(isImprecise: Boolean, t: Term, timeout: Option[Int], asserting: Boolean = false): (Boolean, Option[Term])
 
   /* TODO: Consider changing assert such that
    *         1. It passes State and Operations to the continuation
    *         2. The implementation reacts to a failing assertion by e.g. a state consolidation
    */
   def assert(t: Term, timeout: Option[Int] = None)(Q:  Boolean => VerificationResult): VerificationResult
+  def assertgv(isImprecise: Boolean, t: Term, timeout: Option[Int] = None)(Q:  Boolean => VerificationResult): (VerificationResult, Option[Term])
 
   def fresh(id: String, sort: Sort): Var
   def fresh(id: String, argSorts: Seq[Sort], resultSort: Sort): Function
@@ -93,6 +100,7 @@ trait DefaultDeciderProvider extends VerifierComponent { this: Verifier =>
 
     def prover: Prover = z3
 
+    // TODO;RGV: We can use this to access the 'current' path condition stack
     def pcs: PathConditionStack = pathConditions
 
 //    def setPcs(other: PathConditionStack) = { /* [BRANCH-PARALLELISATION] */
@@ -158,8 +166,12 @@ trait DefaultDeciderProvider extends VerifierComponent { this: Verifier =>
       pathConditions.popScope()
     }
 
-    def setCurrentBranchCondition(t: Term) {
-      pathConditions.setCurrentBranchCondition(t)
+    def setCurrentBranchCondition(t: Term,
+      semanticAstNode: ast.Exp,
+      astNode: ast.Exp,
+      origin: Option[CheckPosition]) {
+
+      pathConditions.setCurrentBranchCondition(t, semanticAstNode, astNode, origin)
       assume(InsertionOrderedSet(Seq(t)))
     }
 
@@ -175,6 +187,7 @@ trait DefaultDeciderProvider extends VerifierComponent { this: Verifier =>
       assume(InsertionOrderedSet(terms), false)
 
     def assume(terms: InsertionOrderedSet[Term], enforceAssumption: Boolean = false): Unit = {
+      //println(pathConditions)
       val filteredTerms =
         if (enforceAssumption) terms
         else terms filterNot isKnownToBeTrue
@@ -184,7 +197,8 @@ trait DefaultDeciderProvider extends VerifierComponent { this: Verifier =>
 
     private def assumeWithoutSmokeChecks(terms: InsertionOrderedSet[Term]) = {
       /* Add terms to Silicon-managed path conditions */
-      terms foreach pathConditions.add
+     //println(s"Decider: adding path condition terms ${terms}")
+     terms foreach pathConditions.add
 
       /* Add terms to the prover's assumptions */
       terms foreach prover.assume
@@ -197,6 +211,35 @@ trait DefaultDeciderProvider extends VerifierComponent { this: Verifier =>
     def checkSmoke() = prover.check(Verifier.config.checkTimeout.toOption) == Unsat
 
     def check(t: Term, timeout: Int) = deciderAssert(t, Some(timeout))
+
+    // we need profiling information here
+    def checkgv(isImprecise: Boolean, t: Term, timeout: Option[Int], asserting: Boolean = false) = {
+
+      if (asserting) {
+        profilingInfo.incrementTotalConjuncts(t.topLevelConjuncts.length)
+      }
+
+      if (deciderAssert(t, timeout)) {
+
+        if (asserting) {
+          profilingInfo.incrementEliminatedConjuncts(t.topLevelConjuncts.length)
+        }
+
+        (true, None)
+
+      } else if(isImprecise && !(deciderAssert(Not(t), timeout))) { //Make sure this part is correct
+
+        (true, Some(TermDifference.termDifference(this, t, asserting)))
+
+      } else {
+
+        if (asserting) {
+          profilingInfo.incrementEliminatedConjuncts(t.topLevelConjuncts.length)
+        }
+
+        (false, None)
+      }
+    }
 
     def assert(t: Term, timeout: Option[Int] = Verifier.config.assertTimeout.toOption)
               (Q: Boolean => VerificationResult)
@@ -216,6 +259,34 @@ trait DefaultDeciderProvider extends VerifierComponent { this: Verifier =>
       Q(success)
     }
 
+    def assertgv(isImprecise: Boolean, t: Term, timeout: Option[Int] = Verifier.config.assertTimeout.toOption)
+              (Q: Boolean => VerificationResult)
+              : (VerificationResult, Option[Term]) = {
+
+      val checkResult = checkgv(isImprecise, t, timeout, true)
+
+      val success = checkResult match {
+        case (status, runtimeCheck) => status
+      }
+
+      val returnedCheck = checkResult match {
+        case (status, runtimeCheck) => runtimeCheck
+      }
+
+      // If the SMT query was not successful, store it (possibly "overwriting"
+      // any previously saved query), otherwise discard any query we had saved
+      // previously (it did not cause a verification failure) and ignore the
+      // current one, because it cannot cause a verification error.
+
+
+      if (success)
+        SymbExLogger.currentLog().discardSMTQuery()
+      else
+        SymbExLogger.currentLog().setSMTQuery(t)
+
+      (Q(success), returnedCheck)
+    }
+
     private def deciderAssert(t: Term, timeout: Option[Int]) = {
       val asserted = isKnownToBeTrue(t)
 
@@ -224,7 +295,7 @@ trait DefaultDeciderProvider extends VerifierComponent { this: Verifier =>
 
     private def isKnownToBeTrue(t: Term) = t match {
       case True() => true
-  //    case eq: BuiltinEquals => eq.p0 == eq.p1 /* WARNING: Blocking trivial equalities might hinder axiom triggering. */
+      case eq: BuiltinEquals => eq.p0 == eq.p1 /* WARNING: Blocking trivial equalities might hinder axiom triggering. */
       case _ if pcs.assumptions contains t => true
       case q: Quantification if q.body == True() => true
       case _ => false

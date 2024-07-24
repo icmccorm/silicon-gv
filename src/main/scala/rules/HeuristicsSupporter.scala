@@ -361,7 +361,7 @@ object heuristicsSupporter extends SymbolicExecutionRules with Immutable {
                    (s: State, h: Heap, v: Verifier)
                    (Q: (State, Heap, Verifier) => VerificationResult)
                    : VerificationResult = {
-    predicateSupporter.fold(s.copy(h = h), predicate, tArgs, tPerm, InsertionOrderedSet.empty, pve, v)((s1, v1) =>
+    predicateSupporter.fold(s.copy(h = h), predicate, None, tArgs, tPerm, InsertionOrderedSet.empty, pve, v)((s1, v1) =>
         Q(s1, s1.h, v1))
   }
 

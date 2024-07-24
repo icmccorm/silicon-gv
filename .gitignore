@@ -19,3 +19,12 @@ silicon_classpath.txt
 lib/
 silver
 viper_tutorial_examples
+*.DS_Store
+.bloop
+.bsp
+.metals
+.scalafmt.conf
+executionTreeData.txt
+dot_input.dot
+executionTreeData.js
+project/metals.sbt

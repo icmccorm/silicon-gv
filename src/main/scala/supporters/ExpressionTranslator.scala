@@ -189,7 +189,8 @@ trait ExpressionTranslator {
 
       /* Unsupported (because unexpected) expressions */
 
-      case     _: ast.LocationAccess
+      case     _: ast.ImpreciseExp //Imprecise expressions are "unsupported" and "unexpected" here
+             | _: ast.LocationAccess
              | _: ast.AccessPredicate
              | _: ast.Old
              | _: ast.LabelledOld

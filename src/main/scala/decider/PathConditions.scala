@@ -6,9 +6,12 @@
 
 package viper.silicon.decider
 
+import viper.silver.ast.Exp
 import viper.silicon.common.collections.immutable.InsertionOrderedSet
 import viper.silicon.Stack
-import viper.silicon.state.terms.{And, Decl, Implies, Quantification, Quantifier, Term, Trigger, True, Var}
+import viper.silicon.state.CheckPosition
+import viper.silicon.state.terms.{And, Decl, Equals, Implies, Quantification, Quantifier, Term, Trigger, True, Var, sorts}
+import viper.silicon.utils
 import viper.silicon.utils.Counter
 
 /*
@@ -22,6 +25,10 @@ import viper.silicon.utils.Counter
 
 trait RecordedPathConditions {
   def branchConditions: Stack[Term]
+  def branchConditionsSemanticAstNodes: Stack[Exp]
+  def branchConditionsAstNodes: Stack[Exp]
+  def branchConditionsOrigins: Stack[Option[CheckPosition]]
+
   def assumptions: InsertionOrderedSet[Term]
   def declarations: InsertionOrderedSet[Decl]
 
@@ -36,10 +43,33 @@ trait RecordedPathConditions {
                  isGlobal: Boolean,
                  ignore: Term /* TODO: Hack, implement properly */)
                 : (Seq[Quantification], Seq[Quantification])
+
+  // If the heap does not contain a mapping for a snapshot(?) value, the path
+  // condition must...? maybe
+  def getEquivalentVariables(variable: Term, lenient: Boolean = false): Seq[Term] = {
+    assumptions.foldRight[Seq[Term]](Seq.empty)((term, equivalentVars) => term match {
+      case Equals(var1 @ Var(_, _), term2) if term2 == variable =>
+        var1 +: equivalentVars
+      case Equals(term1, var2 @ Var(_, _)) if term1 == variable =>
+        var2 +: equivalentVars
+      case Equals(var1 @ Var(_, _), term2) if lenient && term2.toString == variable.toString && term2.sort == variable.sort =>
+        var1 +: equivalentVars
+      case Equals(term1, var2 @ Var(_, _)) if lenient && term1.toString == variable.toString && term1.sort == variable.sort =>
+        var2 +: equivalentVars
+      case Equals(term1, term2) if lenient && term1.sort == sorts.Ref && term2.toString == variable.toString && term2.sort == variable.sort =>
+        term1 +: equivalentVars
+      case Equals(term1, term2) if lenient && term2.sort == sorts.Ref && term1.toString == variable.toString && term1.sort == variable.sort =>
+        term2 +: equivalentVars
+      case _ => equivalentVars
+    })
+  }
 }
 
 trait PathConditionStack extends RecordedPathConditions {
-  def setCurrentBranchCondition(condition: Term): Unit
+  def setCurrentBranchCondition(condition: Term,
+    conditionSemanticAstNode: Exp,
+    conditionAstNode: Exp,
+    conditionOrigin: Option[CheckPosition]): Unit
   def add(assumption: Term): Unit
   def add(declaration: Decl): Unit
   def pushScope(): Unit
@@ -60,11 +90,17 @@ private class PathConditionStackLayer
        with Cloneable {
 
   private var _branchCondition: Option[Term] = None
+  private var _branchConditionSemanticAstNode: Option[Exp] = None
+  private var _branchConditionAstNode: Option[Exp] = None
+  private var _branchConditionOrigin: Option[Option[CheckPosition]] = None
   private var _globalAssumptions: InsertionOrderedSet[Quantification] = InsertionOrderedSet.empty
   private var _nonGlobalAssumptions: InsertionOrderedSet[Term] = InsertionOrderedSet.empty
   private var _declarations: InsertionOrderedSet[Decl] = InsertionOrderedSet.empty
 
   def branchCondition: Option[Term] = _branchCondition
+  def branchConditionSemanticAstNode: Option[Exp] = _branchConditionSemanticAstNode
+  def branchConditionAstNode: Option[Exp] = _branchConditionAstNode
+  def branchConditionOrigin: Option[Option[CheckPosition]] = _branchConditionOrigin
   def globalAssumptions: InsertionOrderedSet[Quantification] = _globalAssumptions
   def nonGlobalAssumptions: InsertionOrderedSet[Term] = _nonGlobalAssumptions
   def declarations: InsertionOrderedSet[Decl] = _declarations
@@ -74,10 +110,37 @@ private class PathConditionStackLayer
 
   def branchCondition_=(condition: Term) {
     assert(_branchCondition.isEmpty,
-             s"Branch condition is already set (to ${_branchCondition.get}), "
-           + s"won't override (with $condition).")
+        s"Branch condition is already set (to ${_branchCondition.get}), "
+      + s"won't override (with $condition).")
 
     _branchCondition = Some(condition)
+  }
+
+  def branchConditionSemanticAstNode_=(conditionSemanticAstNode: Exp) {
+
+    assert(_branchConditionSemanticAstNode.isEmpty,
+      s"Branch condition position is already set (to ${_branchConditionSemanticAstNode.get}), "
+    + s"refusing to override (with $conditionSemanticAstNode).")
+
+    _branchConditionSemanticAstNode = Some(conditionSemanticAstNode)
+  }
+
+  def branchConditionAstNode_=(conditionAstNode: Exp) {
+
+    assert(_branchConditionAstNode.isEmpty,
+        s"Branch condition position is already set (to ${_branchConditionAstNode.get}), "
+      + s"refusing to override (with $conditionAstNode).")
+
+    _branchConditionAstNode = Some(conditionAstNode)
+  }
+
+  def branchConditionOrigin_=(conditionOrigin: Option[CheckPosition]) {
+
+    assert(_branchConditionOrigin.isEmpty,
+      s"Branch condition origin is already set (to ${_branchConditionOrigin.get}), "
+    + s"refusing to override (with $conditionOrigin).")
+
+    _branchConditionOrigin = Some(conditionOrigin)
   }
 
   def add(assumption: Term): Unit = {
@@ -120,6 +183,16 @@ private class PathConditionStackLayer
 private trait LayeredPathConditionStackLike {
   protected def branchConditions(layers: Stack[PathConditionStackLayer]): Stack[Term] =
     layers.flatMap(_.branchCondition)
+
+  protected def branchConditionsSemanticAstNodes(layers:
+    Stack[PathConditionStackLayer]): Stack[Exp] =
+      layers.flatMap(_.branchConditionSemanticAstNode)
+
+  protected def branchConditionsAstNodes(layers: Stack[PathConditionStackLayer]): Stack[Exp] =
+    layers.flatMap(_.branchConditionAstNode)
+
+  protected def branchConditionsOrigins(layers: Stack[PathConditionStackLayer]): Stack[Option[CheckPosition]] =
+    layers.flatMap(_.branchConditionOrigin)
 
   protected def assumptions(layers: Stack[PathConditionStackLayer]): InsertionOrderedSet[Term] =
     InsertionOrderedSet(layers.flatMap(_.assumptions)) // Note: Performance?
@@ -181,6 +254,9 @@ private class DefaultRecordedPathConditions(from: Stack[PathConditionStackLayer]
        with Immutable {
 
   val branchConditions: Stack[Term] = branchConditions(from)
+  val branchConditionsSemanticAstNodes: Stack[Exp] = branchConditionsSemanticAstNodes(from)
+  val branchConditionsAstNodes: Stack[Exp] = branchConditionsAstNodes(from)
+  val branchConditionsOrigins: Stack[Option[CheckPosition]] = branchConditionsOrigins(from)
   val assumptions: InsertionOrderedSet[Term] = assumptions(from)
   val declarations: InsertionOrderedSet[Decl] = declarations(from)
 
@@ -216,10 +292,16 @@ private[decider] class LayeredPathConditionStack
 
   pushScope() /* Create an initial layer on the stack */
 
-  def setCurrentBranchCondition(condition: Term): Unit = {
+  def setCurrentBranchCondition(condition: Term,
+    conditionSemanticAstNode: Exp,
+    conditionAstNode: Exp,
+    conditionOrigin: Option[CheckPosition]): Unit = {
     /* TODO: Split condition into top-level conjuncts as well? */
 
     layers.head.branchCondition = condition
+    layers.head.branchConditionSemanticAstNode = conditionSemanticAstNode
+    layers.head.branchConditionAstNode = conditionAstNode
+    layers.head.branchConditionOrigin = conditionOrigin
   }
 
   def add(assumption: Term): Unit = {
@@ -281,6 +363,12 @@ private[decider] class LayeredPathConditionStack
   }
 
   def branchConditions: Stack[Term] = layers.flatMap(_.branchCondition)
+
+  def branchConditionsSemanticAstNodes: Stack[Exp] = layers.flatMap(_.branchConditionSemanticAstNode)
+
+  def branchConditionsAstNodes: Stack[Exp] = layers.flatMap(_.branchConditionAstNode)
+
+  def branchConditionsOrigins: Stack[Option[CheckPosition]] = layers.flatMap(_.branchConditionOrigin)
 
   def assumptions: InsertionOrderedSet[Term] = allAssumptions
 

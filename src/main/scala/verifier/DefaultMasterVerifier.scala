@@ -51,10 +51,10 @@ class DefaultMasterVerifier(config: Config, override val reporter: PluginAwareRe
 
   protected val preambleReader = new SMTLib2PreambleReader
 
-  protected val sequencesContributor = new DefaultSequencesContributor(domainTranslator, config)
-  protected val setsContributor = new DefaultSetsContributor(domainTranslator, config)
-  protected val multisetsContributor = new DefaultMultisetsContributor(domainTranslator, config)
-  protected val domainsContributor = new DefaultDomainsContributor(symbolConverter, domainTranslator)
+//  protected val sequencesContributor = new DefaultSequencesContributor(domainTranslator, config)
+//  protected val setsContributor = new DefaultSetsContributor(domainTranslator, config)
+//  protected val multisetsContributor = new DefaultMultisetsContributor(domainTranslator, config)
+//  protected val domainsContributor = new DefaultDomainsContributor(symbolConverter, domainTranslator)
   protected val fieldValueFunctionsContributor = new DefaultFieldValueFunctionsContributor(preambleReader, symbolConverter, termConverter, config)
   protected val predSnapGenerator = new PredicateSnapGenerator(symbolConverter, snapshotSupporter)
   protected val predicateAndWandSnapFunctionsContributor = new DefaultPredicateAndWandSnapFunctionsContributor(preambleReader, termConverter, predSnapGenerator, config)
@@ -64,7 +64,7 @@ class DefaultMasterVerifier(config: Config, override val reporter: PluginAwareRe
 
   private val statefulSubcomponents = List[StatefulComponent](
     uniqueIdCounter,
-    sequencesContributor, setsContributor, multisetsContributor, domainsContributor,
+  //  sequencesContributor, setsContributor, domainsContributor,
     fieldValueFunctionsContributor,
     predSnapGenerator, predicateAndWandSnapFunctionsContributor,
     functionsSupporter, predicateSupporter,
@@ -192,7 +192,6 @@ class DefaultMasterVerifier(config: Config, override val reporter: PluginAwareRe
       logger debug s"Silicon finished verification of predicate `${predicate.name}` in ${viper.silver.reporter.format.formatMillisReadably(elapsed)} seconds with the following result: ${condenseToViperResult(results).toString}"
       results
     })
-
     decider.prover.stop()
 
     _verificationPoolManager.pooledVerifiers.comment("-" * 60)
@@ -209,12 +208,10 @@ class DefaultMasterVerifier(config: Config, override val reporter: PluginAwareRe
     val verificationTaskFutures: Seq[Future[Seq[VerificationResult]]] =
       program.methods.filterNot(excludeMethod).map(method => {
         val s = createInitialState(method, program)/*.copy(parallelizeBranches = true)*/ /* [BRANCH-PARALLELISATION] */
-
         _verificationPoolManager.queueVerificationTask(v => {
           val startTime = System.currentTimeMillis()
           val results = v.methodSupporter.verify(s, method)
           val elapsed = System.currentTimeMillis() - startTime
-
           reporter report VerificationResultMessage(s"silicon", method, elapsed, condenseToViperResult(results))
           logger debug s"Silicon finished verification of method `${method.name}` in ${viper.silver.reporter.format.formatMillisReadably(elapsed)} seconds with the following result: ${condenseToViperResult(results).toString}"
 
@@ -222,6 +219,7 @@ class DefaultMasterVerifier(config: Config, override val reporter: PluginAwareRe
         })
       }) ++ cfgs.map(cfg => {
         val s = createInitialState(cfg, program)/*.copy(parallelizeBranches = true)*/ /* [BRANCH-PARALLELISATION] */
+
 
         _verificationPoolManager.queueVerificationTask(v => {
           val startTime = System.currentTimeMillis()
@@ -237,10 +235,18 @@ class DefaultMasterVerifier(config: Config, override val reporter: PluginAwareRe
 
     val methodVerificationResults = verificationTaskFutures.flatMap(_.get())
 
+    logger.debug(s"Final runtime checks: ${runtimeChecks.getChecks}")
+
     /** Write JavaScript-Representation of the log if the SymbExLogger is enabled */
     SymbExLogger.writeJSFile()
     /** Write DOT-Representation of the log if the SymbExLogger is enabled */
     SymbExLogger.writeDotFile()
+    SymbExLogger.writeTextFile()
+
+    // _program.foreach((astNode) => {
+    //   println(s"ast node: ${astNode}")
+    //   println(s"runtime checks for ast node: ${astNode.getChecks()}")
+    // })
 
     (   functionVerificationResults
      ++ predicateVerificationResults
@@ -313,10 +319,10 @@ class DefaultMasterVerifier(config: Config, override val reporter: PluginAwareRe
   /* Prover preamble: After program analysis */
 
   private val analysisOrder: Seq[PreambleContributor[_, _, _]] = Seq(
-    sequencesContributor,
+/*  sequencesContributor,
     setsContributor,
     multisetsContributor,
-    domainsContributor,
+    domainsContributor, */
     fieldValueFunctionsContributor,
     predicateAndWandSnapFunctionsContributor,
     functionsSupporter,
@@ -324,10 +330,10 @@ class DefaultMasterVerifier(config: Config, override val reporter: PluginAwareRe
   )
 
   private val sortDeclarationOrder: Seq[PreambleContributor[_, _, _]] = Seq(
-    sequencesContributor,
+/*  sequencesContributor,
     setsContributor,
     multisetsContributor,
-    domainsContributor,
+    domainsContributor, */
     fieldValueFunctionsContributor,
     predicateAndWandSnapFunctionsContributor,
     functionsSupporter,
@@ -335,10 +341,10 @@ class DefaultMasterVerifier(config: Config, override val reporter: PluginAwareRe
   )
 
   private val sortWrapperDeclarationOrder: Seq[PreambleContributor[Sort, _, _]] = Seq(
-    sequencesContributor,
+/*  sequencesContributor,
     setsContributor,
     multisetsContributor,
-    domainsContributor,
+    domainsContributor, */
     fieldValueFunctionsContributor,
     predicateAndWandSnapFunctionsContributor,
     functionsSupporter,
@@ -350,10 +356,10 @@ class DefaultMasterVerifier(config: Config, override val reporter: PluginAwareRe
      * additionally axiomatised in the sequences axioms).
      * Multisets depend on sets ($Multiset.fromSet).
      */
+/*  sequencesContributor,
     setsContributor,
     multisetsContributor,
-    sequencesContributor,
-    domainsContributor,
+    domainsContributor, */
     fieldValueFunctionsContributor,
     predicateAndWandSnapFunctionsContributor,
     functionsSupporter,
@@ -361,10 +367,10 @@ class DefaultMasterVerifier(config: Config, override val reporter: PluginAwareRe
   )
 
   private val axiomDeclarationOrder: Seq[PreambleContributor[Sort, _, _]] = Seq(
-    sequencesContributor,
+/*  sequencesContributor,
     setsContributor,
     multisetsContributor,
-    domainsContributor,
+    domainsContributor, */
     fieldValueFunctionsContributor,
     predicateAndWandSnapFunctionsContributor,
     functionsSupporter,
@@ -391,8 +397,8 @@ class DefaultMasterVerifier(config: Config, override val reporter: PluginAwareRe
     symbolDeclarationOrder foreach (component =>
       component.declareSymbolsAfterAnalysis(sink))
 
-    sink.comment("/" * 10 + " Uniqueness assumptions from domains")
-    domainsContributor.emitUniquenessAssumptionsAfterAnalysis(sink)
+  //  sink.comment("/" * 10 + " Uniqueness assumptions from domains")
+  //  domainsContributor.emitUniquenessAssumptionsAfterAnalysis(sink)
 
     /* Note: The triggers of the axioms of snapshot functions (FVFs and PSFs) mention the
      * corresponding sort wrappers. These axioms therefore need to be emitted after the sort

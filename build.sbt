@@ -33,7 +33,7 @@ lazy val silicon = (project in file("."))
     maxErrors := 5,
 
     // Run settings
-    run / javaOptions += "-Xss128m",
+    run / javaOptions += "-Xss500m",
 
     // Test settings
     Test / javaOptions ++= (run / javaOptions).value,

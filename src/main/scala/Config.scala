@@ -201,7 +201,7 @@ class Config(args: Seq[String]) extends SilFrontendConfig(args, "Silicon") {
 
   val writeSymbexLogFile = opt[Boolean]("writeSymbexLogFile",
     descr = "Report the symbolic execution log as ExecutionTraceReport",
-    default = Some(false),
+    default = Some(true),
     noshort = true,
     hidden = true
   )
@@ -337,9 +337,12 @@ class Config(args: Seq[String]) extends SilFrontendConfig(args, "Silicon") {
   lazy val z3Exe: String = {
     val isWindows = System.getProperty("os.name").toLowerCase.startsWith("windows")
 
+
     rawZ3Exe.toOption.getOrElse(envOrNone(Silicon.z3ExeEnvironmentVariable)
                      .getOrElse("z3" + (if (isWindows) ".exe" else "")))
   }
+
+
 
   val defaultRawZ3LogFile = "logfile"
   val z3LogFileExtension = "smt2"
@@ -466,7 +469,7 @@ class Config(args: Seq[String]) extends SilFrontendConfig(args, "Silicon") {
   val numberOfParallelVerifiers: ScallopOption[Int] = opt[Int]("numberOfParallelVerifiers",
     descr = (  "Number of verifiers run in parallel. This number plus one is the number of provers "
              + s"run in parallel (default: ${Runtime.getRuntime.availableProcessors()}"),
-    default = Some(Runtime.getRuntime.availableProcessors()),
+    default = Some(1),
     noshort = true
   )
 

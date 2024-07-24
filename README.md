@@ -134,3 +134,5 @@ method main() {
 * On Linux/Mac OS X: ```ln -s <relative path to diretory where you installed silver> silver```
 * On Windows: ```mklink /D silver <relative path to diretory where you installed silver>```
 * Compile by typing: ```sbt compile```
+
+**For more information about downloading, setting up, and running Silicon-GV (including running tests) refer to the [Silicon Wiki](https://github.com/viperproject/silicon/wiki/Getting-Started)!**

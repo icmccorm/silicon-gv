@@ -160,6 +160,17 @@ object SymbExLogger {
     } else ""
   }
 
+  @elidable(INFO)
+  def writeTextFile() {
+    if (config.writeSymbexLogFile()) {
+      val str = toSimpleTreeString
+      val pw = new java.io.PrintWriter(new File(getOutputFolder() + "executionTreeData.txt"))
+      try pw.write(str) finally pw.close()
+
+    }
+  }
+
+
   /**
     * Writes a .DOT-file with a representation of all logged methods, predicates, functions.
     * DOT-file can be interpreted with GraphViz (http://www.graphviz.org/)
@@ -173,6 +184,7 @@ object SymbExLogger {
       try pw.write(str) finally pw.close()
     }
   }
+
 
   /**
     * Writes a .JS-file that can be used for representation of the logged methods, predicates
@@ -600,6 +612,9 @@ class JSTreeRenderer extends Renderer[String] {
 }
 
 class SimpleTreeRenderer extends Renderer[String] {
+  val stateFormatter: DefaultStateFormatter
+    = new DefaultStateFormatter()
+
   def render(memberList: List[SymbLog]): String = {
     var res = ""
     for (m <- memberList) {
@@ -615,7 +630,7 @@ class SimpleTreeRenderer extends Renderer[String] {
   def toSimpleTree(s: SymbolicRecord, n: Int): String = {
     var indent = ""
     for (i <- 1 to n) {
-      indent = "  " + indent
+      indent = " " + indent
     }
     var str = ""
     s match {
@@ -639,13 +654,23 @@ class SimpleTreeRenderer extends Renderer[String] {
         }
       }
       case _ => {
-        str = str + s.toString() + "\n"
+        str = str + s.toString() + printState(s) + "\n"
         for (sub <- s.subs) {
           str = str + indent + toSimpleTree(sub, n + 1)
         }
       }
     }
     str
+  }
+
+
+  def printState(s: SymbolicRecord): String = {
+    var res = ""
+    if (s.state != null) {
+      var σ = s.state.asInstanceOf[State]
+      res = ",\"prestate\":" + stateFormatter.format(σ, s.pcs)
+    }
+    res
   }
 }
 
@@ -817,7 +842,7 @@ class ExecuteRecord(v: ast.Stmt, s: State, p: PathConditionStack) extends Sequen
   val pcs = if (p != null) p.assumptions else null
 
   def toTypeString(): String = {
-    "execute"
+    "execute(" + utils.ast.sourceLineColumn(value) + ")"
   }
 
   override def toJson(): String = {
@@ -832,7 +857,7 @@ class EvaluateRecord(v: ast.Exp, s: State, p: PathConditionStack) extends Sequen
   val pcs = if (p != null) p.assumptions else null
 
   def toTypeString(): String = {
-    "evaluate"
+    "evaluate(" + utils.ast.sourceLineColumn(value) + ")"
   }
 
   override def toJson(): String = {
@@ -847,7 +872,7 @@ class ProduceRecord(v: ast.Exp, s: State, p: PathConditionStack) extends Sequent
   val pcs = if (p != null) p.assumptions else null
 
   def toTypeString(): String = {
-    "produce"
+    "produce(" + utils.ast.sourceLineColumn(value) + ")"
   }
 
   override def toJson(): String = {
@@ -863,11 +888,26 @@ class ConsumeRecord(v: ast.Exp, s: State, p: PathConditionStack)
   val pcs = if (p != null) p.assumptions else null
 
   def toTypeString(): String = {
-    "consume"
+    "consume(" + utils.ast.sourceLineColumn(value) + ")"
   }
 
   override def toJson(): String = {
     if (value != null) JsonHelper.pair("type", "consume") + "," + JsonHelper.pair("pos", utils.ast.sourceLineColumn(value)) + "," + JsonHelper.pair("value", value.toString())
+    else ""
+  }
+}
+
+class WellformednessRecord(v: ast.Exp, s: State, p: PathConditionStack) extends SequentialRecord {
+  val value = v
+  val state = s
+  val pcs = if (p != null) p.assumptions else null
+
+  def toTypeString(): String = {
+    "wellFormedness(" + utils.ast.sourceLineColumn(value) + ")"
+  }
+
+  override def toJson(): String = {
+    if (value != null) JsonHelper.pair("type", "wellFormedness") + "," + JsonHelper.pair("pos", utils.ast.sourceLineColumn(value)) + "," + JsonHelper.pair("value", value.toString())
     else ""
   }
 }
