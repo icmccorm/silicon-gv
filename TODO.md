@@ -1,0 +1,1 @@
+Handle version of merge that takes RecordedPathConditions as arguments. 
