@@ -22,4 +22,6 @@ package object state {
     Map[
       (ast.Resource, Seq[NonQuantifiedChunk], Seq[Term]),
       (TaggedSummarisingSnapshot, Seq[Term], Term)]
+
+  type CheckList = Seq[CheckInfo]
 }

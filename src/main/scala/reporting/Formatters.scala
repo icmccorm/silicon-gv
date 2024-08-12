@@ -8,7 +8,7 @@ package viper.silicon.reporting
 
 import viper.silicon.decider.RecordedPathConditions
 import viper.silicon.state.State.OldHeaps
-import viper.silicon.state.{Heap, State, Store}
+import viper.silicon.state.{Heap, State, Store, runtimeChecks, profilingInfo, reconstructedPermissions}
 import viper.silicon.state.terms._
 import viper.silicon.verifier.Verifier
 import viper.silver.ast.AbstractLocalVar
@@ -26,10 +26,15 @@ trait StateFormatter {
 
 class DefaultStateFormatter extends StateFormatter {
   def format(s: State, pcs: RecordedPathConditions): String = {
+    val isImpStr = s.isImprecise.toString
     val gStr = format(s.g)
     val hStr = format(s.h)
+    val optHeapStr = format(s.optimisticHeap)
     val oldHeapsStr = format(s.oldHeaps)
-
+    val runtimeCheckMap = runtimeChecks.getChecks
+    val eliminatedConjunctsNum = profilingInfo.getEliminatedConjuncts
+    val totalConjunctsNum = profilingInfo.getTotalConjuncts
+    val permissions = "Reconstructed permissions deprecated."
     val pcsStr =
       if (SiliconRunner.logger.isTraceEnabled())
         /* TODO: It would be better if the choice between whether or not to include path
@@ -39,11 +44,19 @@ class DefaultStateFormatter extends StateFormatter {
       else
         ""
 
-    s"""Store: $gStr,
+    s"""Imprecise: $isImpStr,
+       |Store: $gStr,
        |Heap: $hStr,
+       |OptHeap: $optHeapStr,
        |OHs: $oldHeapsStr,
-       |PCs: $pcsStr)""".stripMargin
+       |PCs: $pcsStr,
+       |Runtime Checks: $runtimeCheckMap
+       |Total Conjuncts: $totalConjunctsNum
+       |Eliminated Conjuncts: $eliminatedConjunctsNum
+       |Reconstructed Permissions: $permissions""".stripMargin
   }
+
+
 
   def format(g: Store): String = g.values.mkString("(", ", ", ")")
   def format(h: Heap): String = h.values.mkString("(", ", ", ")")
@@ -65,14 +78,21 @@ class DefaultStateFormatter extends StateFormatter {
 
   //Methods for SymbexLogger
   def toJson(s: State, pcs: Set[Term]): String = {
-    val gStr = toJson(s.g)
+    val isImpStr = s.isImprecise.toString
+    val yStr = toJson(s.g)
     val hStr = toJson(s.h)
-    val oldStr = s.oldHeaps.get(Verifier.PRE_STATE_LABEL) match {
+    val optHeapStr = toJson(s.optimisticHeap)
+    val gStr = s.oldHeaps.get(Verifier.PRE_STATE_LABEL) match {
       case Some(o) => toJson(o)
       case _ => "[]"
     }
-    val pcsStr = toJson(pcs)
-    s"""{"store":$gStr,"heap":$hStr,"oldHeap":$oldStr,"pcs":$pcsStr}""".stripMargin
+    val pcStr = toJson(pcs)
+    s"""{"imprecise":$isImpStr,
+       |"store":$yStr,
+       |"heap":$hStr,
+       | "optHeap":$optHeapStr,
+       | "oldHeap":$gStr,
+       | "pcs":$pcStr}""".stripMargin
   }
 
   private def toJson(g: Store): String = {

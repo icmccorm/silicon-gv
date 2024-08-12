@@ -5,7 +5,7 @@
 // Copyright (c) 2011-2019 ETH Zurich.
 
 package viper.silicon.supporters
-
+import viper.silicon.rules.wellFormedness._
 import com.typesafe.scalalogging.Logger
 import viper.silver.ast
 import viper.silver.ast.Program
@@ -87,7 +87,9 @@ trait DefaultPredicateVerificationUnitProvider extends VerifierComponent { v: Ve
       openSymbExLogger(predicate)
 
       val ins = predicate.formalArgs.map(_.localVar)
-      val s = sInit.copy(g = Store(ins.map(x => (x, decider.fresh(x)))),
+      val s = sInit.copy(isImprecise = false,
+                         optimisticHeap = Heap(),
+                         g = Store(ins.map(x => (x, decider.fresh(x)))),
                          h = Heap(),
                          oldHeaps = OldHeaps())
       val err = PredicateNotWellformed(predicate)
@@ -99,7 +101,7 @@ trait DefaultPredicateVerificationUnitProvider extends VerifierComponent { v: Ve
           /*    locallyXXX {
                 magicWandSupporter.checkWandsAreSelfFraming(σ.γ, σ.h, predicate, c)}
           &&*/  executionFlowController.locally(s, v)((s1, _) => {
-                  produce(s1, freshSnap, body, err, v)((_, _) =>
+                  wellformed(s1, freshSnap, Seq(body), err, v)((_, _) =>
                     Success())})
       }
 

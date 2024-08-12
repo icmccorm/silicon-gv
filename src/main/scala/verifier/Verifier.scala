@@ -50,6 +50,8 @@ trait Verifier {
 
 object Verifier {
   val PRE_STATE_LABEL = "old"
+  val PRE_HEAP_LABEL = "oldH"
+  val PRE_OPTHEAP_LABEL = "oldOH"
   val MAGIC_WAND_LHS_STATE_LABEL = ast.LabelledOld.LhsOldLabel
 
   private var _config: Config = _

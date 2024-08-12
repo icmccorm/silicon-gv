@@ -17,10 +17,11 @@ import viper.silicon.interfaces._
 import viper.silicon.interfaces.decider._
 import viper.silicon.logger.records.data.{DeciderAssertRecord, DeciderAssumeRecord, ProverAssertRecord}
 import viper.silicon.state._
+import viper.silicon.state.CheckPosition
 import viper.silicon.state.terms._
 import viper.silicon.verifier.{Verifier, VerifierComponent}
 import viper.silver.reporter.{ConfigurationConfirmation, InternalWarningMessage}
-
+import viper.silicon.supporters.TermDifference
 import scala.collection.immutable.HashSet
 import scala.collection.mutable
 
@@ -41,7 +42,7 @@ trait Decider {
 
   def checkSmoke(isAssert: Boolean = false): Boolean
 
-  def setCurrentBranchCondition(t: Term, te: Option[ast.Exp] = None): Unit
+  def setCurrentBranchCondition(t: Term, te: Option[ast.Exp] = None, semanticAstNode: Option[ast.Exp], origin: Option[CheckPosition]): Unit
   def setPathConditionMark(): Mark
 
   def assume(t: Term): Unit
@@ -50,12 +51,14 @@ trait Decider {
   def assume(ts: Iterable[Term]): Unit
 
   def check(t: Term, timeout: Int): Boolean
+  def checkgv(isImprecise: Boolean, t: Term, timeout: Option[Int], asserting: Boolean = false): (Boolean, Option[Term])
 
   /* TODO: Consider changing assert such that
    *         1. It passes State and Operations to the continuation
    *         2. The implementation reacts to a failing assertion by e.g. a state consolidation
    */
   def assert(t: Term, timeout: Option[Int] = None)(Q:  Boolean => VerificationResult): VerificationResult
+  def assertgv(isImprecise: Boolean, t: Term, timeout: Option[Int] = None)(Q:  Boolean => VerificationResult): (VerificationResult, Option[Term])
 
   def fresh(id: String, sort: Sort): Var
   def fresh(id: String, argSorts: Seq[Sort], resultSort: Sort): Function
@@ -228,9 +231,9 @@ trait DefaultDeciderProvider extends VerifierComponent { this: Verifier =>
       //symbExLog.closeScope(sepIdentifier)
     }
 
-    def setCurrentBranchCondition(t: Term, te: Option[ast.Exp] = None): Unit = {
-      pathConditions.setCurrentBranchCondition(t, te)
-      assume(InsertionOrderedSet(Seq(t)))
+    def setCurrentBranchCondition(condition: Term, conditionExp: Option[ast.Exp], semanticExp: Option[ast.Exp], conditionOrigin: Option[CheckPosition]): Unit = {
+      pathConditions.setCurrentBranchCondition(condition, conditionExp, semanticExp, conditionOrigin)
+      assume(InsertionOrderedSet(Seq(condition)))
     }
 
     def setPathConditionMark(): Mark = pathConditions.mark()
@@ -282,6 +285,35 @@ trait DefaultDeciderProvider extends VerifierComponent { this: Verifier =>
 
     def check(t: Term, timeout: Int): Boolean = deciderAssert(t, Some(timeout))
 
+    def checkgv(isImprecise: Boolean, t: Term, timeout: Option[Int], asserting: Boolean = false) = {
+
+      if (asserting) {
+        profilingInfo.incrementTotalConjuncts(t.topLevelConjuncts.length)
+      }
+
+      if (deciderAssert(t, timeout)) {
+
+        if (asserting) {
+          profilingInfo.incrementEliminatedConjuncts(t.topLevelConjuncts.length)
+        }
+
+        (true, None)
+
+      } else if(isImprecise && !(deciderAssert(Not(t), timeout))) { //Make sure this part is correct
+
+        (true, Some(TermDifference.termDifference(this, t, asserting)))
+
+      } else {
+
+        if (asserting) {
+          profilingInfo.incrementEliminatedConjuncts(t.topLevelConjuncts.length)
+        }
+
+        (false, None)
+      }
+    }
+
+
     def assert(t: Term, timeout: Option[Int] = Verifier.config.assertTimeout.toOption)
               (Q: Boolean => VerificationResult)
               : VerificationResult = {
@@ -298,6 +330,34 @@ trait DefaultDeciderProvider extends VerifierComponent { this: Verifier =>
         symbExLog.setSMTQuery(t)
 
       Q(success)
+    }
+
+    def assertgv(isImprecise: Boolean, t: Term, timeout: Option[Int] = Verifier.config.assertTimeout.toOption)
+              (Q: Boolean => VerificationResult)
+              : (VerificationResult, Option[Term]) = {
+
+      val checkResult = checkgv(isImprecise, t, timeout, true)
+
+      val success = checkResult match {
+        case (status, runtimeCheck) => status
+      }
+
+      val returnedCheck = checkResult match {
+        case (status, runtimeCheck) => runtimeCheck
+      }
+
+      // If the SMT query was not successful, store it (possibly "overwriting"
+      // any previously saved query), otherwise discard any query we had saved
+      // previously (it did not cause a verification failure) and ignore the
+      // current one, because it cannot cause a verification error.
+
+
+      if (success)
+        symbExLog.discardSMTQuery()
+      else
+        symbExLog.setSMTQuery(t)
+
+      (Q(success), returnedCheck)
     }
 
     private def deciderAssert(t: Term, timeout: Option[Int]) = {

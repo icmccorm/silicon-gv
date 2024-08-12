@@ -8,6 +8,7 @@ package viper.silicon.rules
 
 import scala.collection.mutable
 import viper.silver.ast
+import viper.silicon.utils.toSf
 import viper.silver.ast.utility.QuantifiedPermissions.QuantifiedPermissionAssertion
 import viper.silver.verifier.PartialVerificationError
 import viper.silicon.interfaces.{Unreachable, VerificationResult}
@@ -19,6 +20,7 @@ import viper.silicon.state._
 import viper.silicon.supporters.functions.NoopFunctionRecorder
 import viper.silicon.verifier.Verifier
 import viper.silver.verifier.reasons.{NegativePermission, QPAssertionNotInjective}
+import viper.silver.verifier.reasons._
 
 trait ProductionRules extends SymbolicExecutionRules {
 
@@ -135,7 +137,8 @@ object producer extends ProductionRules {
                           v: Verifier)
                          (Q: (State, Verifier) => VerificationResult)
                          : VerificationResult = {
-
+    // TODO: unset the method call ast node field here!
+    // TODO: check the other places where we do something like this...
     if (as.isEmpty)
       Q(s, v)
     else {
@@ -214,6 +217,11 @@ object producer extends ProductionRules {
       continuation(if (state.exhaleExt) state.copy(reserveHeaps = state.h +: state.reserveHeaps.drop(1)) else state, verifier)
 
     val produced = a match {
+      // TODO: figure out how imprecise deals with snapshots - J
+      case impr@ast.ImpreciseExp(e) =>
+        val second = toSf(Second(sf(sorts.Snap, v)))
+        produce(s.copy(isImprecise = true), second, e, pve, v)(Q)
+
       case imp @ ast.Implies(e0, a0) if !a.isPure && s.moreJoins =>
         val impliesRecord = new ImpliesRecord(imp, s, v.decider.pcs, "produce")
         val uidImplies = v.symbExLog.openScope(impliesRecord)

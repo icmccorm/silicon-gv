@@ -18,7 +18,8 @@ import viper.silicon.state.terms.perms.{IsNonPositive, IsPositive}
 import viper.silicon.supporters.functions.NoopFunctionRecorder
 import viper.silicon.verifier.Verifier
 import viper.silver.ast
-import viper.silver.verifier.VerificationError
+import viper.silver.verifier.{VerificationError, PartialVerificationError}
+import viper.silver.verifier.reasons._
 
 object moreCompleteExhaleSupporter extends SymbolicExecutionRules {
   sealed trait TaggedSummarisingSnapshot {
@@ -155,12 +156,17 @@ object moreCompleteExhaleSupporter extends SymbolicExecutionRules {
 
   def lookupComplete(s: State,
                      h: Heap,
+                     oh: Heap,
+                     addToOh: Boolean,
                      resource: ast.Resource,
+                     runtimeCheckFieldTarget: ast.FieldAccess,
                      args: Seq[Term],
+                     pve: PartialVerificationError,
                      ve: VerificationError,
-                     v: Verifier)
+                     v: Verifier,
+                     generateChecks: Boolean)
                     (Q: (State, Term, Verifier) => VerificationResult)
-                    : VerificationResult = {
+  : VerificationResult = {
 
     val id = ChunkIdentifier(resource, s.program)
     val relevantChunks = findChunksWithID[NonQuantifiedChunk](h.values, id).toSeq

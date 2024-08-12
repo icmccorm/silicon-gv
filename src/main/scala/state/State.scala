@@ -18,7 +18,9 @@ import viper.silicon.supporters.PredicateData
 import viper.silicon.supporters.functions.{FunctionData, FunctionRecorder, NoopFunctionRecorder}
 import viper.silicon.{Map, Stack}
 
+
 final case class State(g: Store = Store(),
+                       oldStore: Option[Store] = None,
                        h: Heap = Heap(),
                        program: ast.Program,
                        currentMember: Option[ast.Member],
@@ -26,13 +28,18 @@ final case class State(g: Store = Store(),
                        functionData: Map[ast.Function, FunctionData],
                        oldHeaps: OldHeaps = Map.empty,
 
+                       isImprecise: Boolean = false,
+                       optimisticHeap: Heap = Heap(),
+                       gatherFrame: Boolean = false,
+                       frameArgHeap: Heap = Heap(),
+
                        parallelizeBranches: Boolean = false,
 
                        recordVisited: Boolean = false,
                        visited: List[ast.Predicate] = Nil, /* TODO: Use a multiset instead of a list */
 
                        methodCfg: SilverCfg = null,
-                       invariantContexts: Stack[Heap] = Stack.empty,
+                       invariantContexts: Stack[(Boolean,Boolean,Heap,Heap)] = Stack.empty,
 
                        constrainableARPs: InsertionOrderedSet[Var] = InsertionOrderedSet.empty,
                        quantifiedVariables: Stack[Var] = Nil,
@@ -70,7 +77,16 @@ final case class State(g: Store = Store(),
                        /* ast.Field, ast.Predicate, or MagicWandIdentifier */
                        heapDependentTriggers: InsertionOrderedSet[Any] = InsertionOrderedSet.empty,
                        moreCompleteExhale: Boolean = false,
-                       moreJoins: Boolean = false)
+                       moreJoins: Boolean = false,
+                       methodCallAstNode: Option[ast.MethodCall] = None,
+                       foldOrUnfoldAstNode: Option[ast.Node] = None,
+                       loopPosition: Option[CheckPosition.Loop] = None,
+                       forFraming: Boolean = false,
+                       generateChecks: Boolean = true,
+                       needConditionFramingUnfold: Boolean = false,
+                       needConditionFramingProduce: Boolean = false,
+                       madeOptimisticAssumptions: Boolean = false)
+
     extends Mergeable[State] {
 
   val isMethodVerification: Boolean = {
@@ -137,10 +153,12 @@ object State {
   def merge(s1: State, s2: State): State = {
     s1 match {
       /* Decompose state s1 */
-      case State(g1, h1, program, member,
+      case State(g1, oldStore1, h1, program, member,
                  predicateData,
                  functionData,
                  oldHeaps1,
+                 isImprecise, optimisticHeap1,
+                 gatherFrame1, frameArgHeap1,
                  parallelizeBranches1,
                  recordVisited1, visited1,
                  methodCfg1, invariantContexts1,
@@ -158,14 +176,23 @@ object State {
                  ssCache1, hackIssue387DisablePermissionConsumption1,
                  qpFields1, qpPredicates1, qpMagicWands1, smCache1, pmCache1, smDomainNeeded1,
                  predicateSnapMap1, predicateFormalVarMap1, retryLevel, useHeapTriggers,
-                 moreCompleteExhale, moreJoins) =>
-
+                 moreCompleteExhale, moreJoins,
+                 methodCallAstNode1,
+                 foldOrUnfoldAstNode1,
+                 loopPosition1,
+                 forFraming1,
+                 generateChecks1,
+                 needConditionFramingUnfold1,
+                 needConditionFramingProduce1,
+                 madeOptimisticAssumptions1) =>
         /* Decompose state s2: most values must match those of s1 */
         s2 match {
-          case State(`g1`, `h1`,
+          case State(`g1`, `oldStore1`, `h1`,
                      `program`, `member`,
                      `predicateData`, `functionData`,
                      `oldHeaps1`,
+                     `isImprecise`, `optimisticHeap1`,
+                     `gatherFrame1`, `frameArgHeap1`,
                      `parallelizeBranches1`,
                      `recordVisited1`, `visited1`,
                      `methodCfg1`, `invariantContexts1`,
@@ -183,7 +210,10 @@ object State {
                      ssCache2, `hackIssue387DisablePermissionConsumption1`,
                      `qpFields1`, `qpPredicates1`, `qpMagicWands1`, smCache2, pmCache2, `smDomainNeeded1`,
                      `predicateSnapMap1`, `predicateFormalVarMap1`, `retryLevel`, `useHeapTriggers`,
-                     moreCompleteExhale2, `moreJoins`) =>
+                     moreCompleteExhale2, `moreJoins`, `methodCallAstNode1`,
+                    `foldOrUnfoldAstNode1`,`loopPosition1`, `forFraming1`,`generateChecks1`,
+                    `needConditionFramingUnfold1`, `needConditionFramingProduce1`,
+                    `madeOptimisticAssumptions1`) =>
 
             val functionRecorder3 = functionRecorder1.merge(functionRecorder2)
             val triggerExp3 = triggerExp1 && triggerExp2
@@ -288,9 +318,14 @@ object State {
   def merge(s1: State, pc1: RecordedPathConditions, s2: State, pc2: RecordedPathConditions): State = {
     s1 match {
       /* Decompose state s1 */
-      case State(g1, h1, program, member,
+      case State(g1, oldStore1, h1,
+      program, member,
       predicateData, functionData,
       oldHeaps1,
+      isImprecise1,
+      optimisticHeap1,
+      gatherFrame1,
+      frameArgHeap1,
       parallelizeBranches1,
       recordVisited1, visited1,
       methodCfg1, invariantContexts1,
@@ -308,13 +343,25 @@ object State {
       ssCache1, hackIssue387DisablePermissionConsumption1,
       qpFields1, qpPredicates1, qpMagicWands1, smCache1, pmCache1, smDomainNeeded1,
       predicateSnapMap1, predicateFormalVarMap1, retryLevel, useHeapTriggers,
-      moreCompleteExhale, moreJoins) =>
+      moreCompleteExhale, moreJoins,
+      methodCallAstNode1,
+      foldOrUnfoldAstNode1,
+      loopPosition1,
+      forFraming1,
+      generateChecks1,
+      needConditionFramingUnfold1,
+      needConditionFramingProduce1,
+      madeOptimisticAssumptions1) =>
 
         /* Decompose state s2: most values must match those of s1 */
         s2 match {
-          case State(g2, h2, `program`, `member`,
+          case State(g2, oldStore2, h2, `program`, `member`,
           `predicateData`, `functionData`,
           oldHeaps2,
+          isImprecise2,
+          optimisticHeap2,
+          gatherFrame2,
+          frameArgHeap2,
           `parallelizeBranches1`,
           `recordVisited1`, `visited1`,
           `methodCfg1`, invariantContexts2,
@@ -332,7 +379,11 @@ object State {
           ssCache2, `hackIssue387DisablePermissionConsumption1`,
           `qpFields1`, `qpPredicates1`, `qpMagicWands1`, smCache2, pmCache2, smDomainNeeded2,
           `predicateSnapMap1`, `predicateFormalVarMap1`, `retryLevel`, `useHeapTriggers`,
-          moreCompleteExhale2, `moreJoins`) =>
+          moreCompleteExhale2, `moreJoins`,
+          `methodCallAstNode1`,
+          `foldOrUnfoldAstNode1`, `loopPosition1`, `forFraming1`, `generateChecks1`,
+          `needConditionFramingUnfold1`, `needConditionFramingProduce1`,
+          `madeOptimisticAssumptions1`) =>
 
             val functionRecorder3 = functionRecorder1.merge(functionRecorder2)
             val triggerExp3 = triggerExp1 && triggerExp2

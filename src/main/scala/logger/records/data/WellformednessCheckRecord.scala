@@ -20,3 +20,4 @@ class WellformednessCheckRecord(v: Seq[ast.Exp], s: State, p: PathConditionStack
 
   override val toTypeString: String = "WellformednessCheck"
 }
+

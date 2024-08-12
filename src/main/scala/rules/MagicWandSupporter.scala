@@ -369,7 +369,7 @@ object magicWandSupporter extends SymbolicExecutionRules {
           parallelizeBranches = s.parallelizeBranches /* See comment above */
           /*branchConditions = c.branchConditions*/)
         executionFlowController.locally(s1, v)((s2, v1) => {
-          v1.decider.setCurrentBranchCondition(And(branchConditions), Some(viper.silicon.utils.ast.BigAnd(branchConditionsExp.flatten)))
+          v1.decider.setCurrentBranchCondition(And(branchConditions), Some(viper.silicon.utils.ast.BigAnd(branchConditionsExp.flatten)), None, None)
           conservedPcs.foreach(pcs => v1.decider.assume(pcs.conditionalized))
           Q(s2, magicWandChunk, v1)})}})
   }

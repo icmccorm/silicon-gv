@@ -1,8 +1,9 @@
 package viper.silicon.state
 
-import viper.silicon.utils.{NodeHash, NodeEquiv}
 import viper.silicon.state.terms.Term
+import viper.silicon.supporters.{NodeEquiv, NodeHash}
 import viper.silver.ast
+
 import scala.collection.concurrent.TrieMap
 
 object reconstructedPermissions {

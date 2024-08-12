@@ -52,6 +52,14 @@ package object utils {
     }
   }
 
+  def zip3[A, B, C](list1: Seq[A], list2: Seq[B], list3: Seq[C]): Seq[(A, B, C)] = {
+    (list1, list2, list3) match {
+      case (a +: as, b +: bs, c +: cs) => (a, b, c) +: zip3(as, bs, cs)
+      case (Seq(), Seq(), Seq()) => Seq()
+      case _ => sys.error("Error: lists of varying length given as argument!")
+    }
+  }
+
   /* NOT thread-safe */
   class Counter(firstValue: Int = 0)
       extends StatefulComponent
@@ -194,9 +202,26 @@ package object utils {
       case _ => node.pos.toString
     }
 
-    def sourceLineColumn(node: silver.ast.Node with silver.ast.Positioned): String = node.pos match {
-      case pos: silver.ast.HasLineColumn => s"${pos.line}:${pos.column}"
-      case _ => node.pos.toString
+    def sourceLineColumn(node: silver.ast.Node with silver.ast.Positioned): String = {
+      if (node == null) {
+        return "<no position>"
+      }
+      node.pos match {
+        case pos: silver.ast.AbstractSourcePosition => {
+          val endString = pos.end match {
+            case Some(endPos) => s"->${endPos.line}:${endPos.column}"
+            case _ => "<>"
+          }
+          s"${pos.line}:${pos.column}$endString"
+        }
+        case pos: silver.ast.HasLineColumn => s"${pos.line}:${pos.column}"
+        case _ => node.pos.toString
+      }
+    }
+
+    def sourceLineColumnPair(node: silver.ast.Node with silver.ast.Positioned): (Int, Int) = node.pos match {
+      case pos: silver.ast.HasLineColumn => (pos.line, pos.column)
+      case _ => sys.error(node.pos.toString)
     }
 
     /** Flattens an Exp into a list of subexpressions

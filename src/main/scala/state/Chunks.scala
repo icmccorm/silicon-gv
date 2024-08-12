@@ -32,7 +32,8 @@ case class BasicChunk(resourceID: BaseID,
                       args: Seq[Term],
                       snap: Term,
                       perm: Term)
-    extends NonQuantifiedChunk {
+  extends NonQuantifiedChunk {
+
 
   require(perm.sort == sorts.Perm, s"Permissions $perm must be of sort Perm, but found ${perm.sort}")
   resourceID match {
@@ -69,10 +70,10 @@ case class QuantifiedFieldChunk(id: BasicChunkIdentifier,
                                 initialCond: Option[Term],
                                 singletonRcvr: Option[Term],
                                 hints: Seq[Term] = Nil)
-    extends QuantifiedBasicChunk {
+  extends QuantifiedBasicChunk {
 
   require(fvf.sort.isInstanceOf[terms.sorts.FieldValueFunction],
-         s"Quantified chunk values must be of sort FieldValueFunction, but found value $fvf of sort ${fvf.sort}")
+    s"Quantified chunk values must be of sort FieldValueFunction, but found value $fvf of sort ${fvf.sort}")
   require(perm.sort == sorts.Perm, s"Permissions $perm must be of sort Perm, but found ${perm.sort}")
 
   override val resourceID = FieldID
@@ -103,7 +104,7 @@ case class QuantifiedPredicateChunk(id: BasicChunkIdentifier,
                                     initialCond: Option[Term],
                                     singletonArgs: Option[Seq[Term]],
                                     hints: Seq[Term] = Nil)
-    extends QuantifiedBasicChunk {
+  extends QuantifiedBasicChunk {
 
   require(psf.sort.isInstanceOf[terms.sorts.PredicateSnapFunction], s"Quantified predicate chunk values must be of sort PredicateSnapFunction ($psf), but found ${psf.sort}")
   require(perm.sort == sorts.Perm, s"Permissions $perm must be of sort Perm, but found ${perm.sort}")
@@ -129,7 +130,7 @@ case class QuantifiedMagicWandChunk(id: MagicWandIdentifier,
                                     initialCond: Option[Term],
                                     singletonArgs: Option[Seq[Term]],
                                     hints: Seq[Term] = Nil)
-    extends QuantifiedBasicChunk {
+  extends QuantifiedBasicChunk {
 
   require(wsf.sort.isInstanceOf[terms.sorts.PredicateSnapFunction] && wsf.sort.asInstanceOf[terms.sorts.PredicateSnapFunction].codomainSort == sorts.Snap, s"Quantified magic wand chunk values must be of sort MagicWandSnapFunction ($wsf), but found ${wsf.sort}")
   require(perm.sort == sorts.Perm, s"Permissions $perm must be of sort Perm, but found ${perm.sort}")
@@ -169,7 +170,7 @@ case class MagicWandChunk(id: MagicWandIdentifier,
                           args: Seq[Term],
                           snap: MagicWandSnapshot,
                           perm: Term)
-    extends NonQuantifiedChunk {
+  extends NonQuantifiedChunk {
 
   require(perm.sort == sorts.Perm, s"Permissions $perm must be of sort Perm, but found ${perm.sort}")
 
